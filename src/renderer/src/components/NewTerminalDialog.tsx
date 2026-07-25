@@ -1,0 +1,124 @@
+import { useEffect, useState } from 'react'
+import type { AgentInfo } from '../../../shared/types'
+import { useTerminalStore } from '../stores/terminalStore'
+
+const NO_AGENT = '__none__'
+const NEW_AGENT = '__new__'
+
+export function NewTerminalDialog({
+  defaultCwd,
+  onClose
+}: {
+  defaultCwd: string | null
+  onClose: () => void
+}): React.JSX.Element {
+  const addPane = useTerminalStore((s) => s.addPane)
+  const [cwd, setCwd] = useState(defaultCwd ?? '')
+  const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [agentChoice, setAgentChoice] = useState(NO_AGENT)
+  const [newAgentName, setNewAgentName] = useState('')
+  const [model, setModel] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const refreshAgents = (): void => {
+    void window.api.agentsList().then(setAgents)
+  }
+
+  useEffect(() => {
+    refreshAgents()
+    return window.api.onAgentsChanged(refreshAgents)
+  }, [])
+
+  const browse = async (): Promise<void> => {
+    const picked = await window.api.pickFolder()
+    if (picked) setCwd(picked)
+  }
+
+  const createAgent = async (): Promise<void> => {
+    try {
+      const info = await window.api.agentsCreateStarter(newAgentName)
+      refreshAgents()
+      setAgentChoice(info.name)
+      setNewAgentName('')
+      setError(`Starter agent written to ${info.filePath} — edit it to define the agent's role.`)
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const launch = async (): Promise<void> => {
+    if (!cwd.trim()) {
+      setError('Pick a working folder first.')
+      return
+    }
+    if (!defaultCwd) await window.api.setActiveProject(cwd.trim())
+    addPane({
+      cwd: cwd.trim(),
+      agentName: agentChoice !== NO_AGENT && agentChoice !== NEW_AGENT ? agentChoice : undefined,
+      model: model.trim() || undefined
+    })
+    onClose()
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>New Claude terminal</h3>
+
+        <label>Working folder</label>
+        <div className="row">
+          <input
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder="C:\path\to\project"
+            spellCheck={false}
+          />
+          <button onClick={() => void browse()}>Browse…</button>
+        </div>
+
+        <label>Agent</label>
+        <select value={agentChoice} onChange={(e) => setAgentChoice(e.target.value)}>
+          <option value={NO_AGENT}>No agent (plain Claude)</option>
+          {agents.map((a) => (
+            <option key={a.filePath} value={a.name}>
+              {a.name}
+              {a.description ? ` — ${a.description.slice(0, 60)}` : ''}
+            </option>
+          ))}
+          <option value={NEW_AGENT}>➕ New agent…</option>
+        </select>
+
+        {agentChoice === NEW_AGENT && (
+          <div className="row">
+            <input
+              value={newAgentName}
+              onChange={(e) => setNewAgentName(e.target.value)}
+              placeholder="agent-name"
+              spellCheck={false}
+            />
+            <button onClick={() => void createAgent()} disabled={!newAgentName.trim()}>
+              Create
+            </button>
+          </div>
+        )}
+
+        <label>Model (optional)</label>
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="default from your settings"
+          spellCheck={false}
+        />
+
+        {error && <p className="modal-note">{error}</p>}
+
+        <div className="modal-actions">
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={() => void launch()}>
+            Launch
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

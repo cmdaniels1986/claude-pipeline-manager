@@ -1,0 +1,215 @@
+import { app, dialog, ipcMain } from 'electron'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+import type { CreateTermOptions, Diagnostics } from '../shared/types'
+import { AgentDiscovery } from './agents/AgentDiscovery'
+import { GraphStore } from './graph/GraphStore'
+import { GraphMcpServer } from './mcp/GraphMcpServer'
+import { writeMcpConfigFile } from './mcp/writeMcpConfig'
+import { PtyManager } from './pty/PtyManager'
+import { detectClaude, type ClaudeInfo } from './pty/resolveClaude'
+import { broadcast, createMainWindow, getMainWindow, openGraphWindow } from './windows'
+
+if (!app.isPackaged) {
+  // dev-only: allows driving the renderer over CDP for automated verification
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}
+
+// A failed ConPTY spawn (e.g. bad cwd) surfaces as an async uncaught exception from
+// node-pty; without this handler Electron shows a blocking native error dialog that
+// freezes the whole app. Log and keep running instead.
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaught exception:', err)
+})
+
+const GRAPH_PROTOCOL = `# Pipeline Graph Protocol
+
+This workspace has a LIVE shared pipeline graph. All Claude sessions collaborate on it
+through the "graph" MCP server (tools: graph_get, graph_upsert_nodes, graph_upsert_edges,
+graph_remove, graph_set_status). A human watches this graph in real time — keep it current.
+
+Rules:
+1. Before working on pipeline code, call graph_get to see the current graph.
+2. When you learn pipeline structure (datasets, models, tables, sources and their lineage)
+   from reading SQL/dbt/Python ETL code, record it immediately with graph_upsert_nodes and
+   graph_upsert_edges. Use stable snake_case ids matching artifact names (e.g. "stg_orders",
+   "fct_revenue"). An edge means: source feeds target. Set meta path to the source file.
+3. When you START changing a node's code: graph_set_status(id, "in_progress", why).
+4. When a change is DONE and verified (tests/build/queries pass): graph_set_status(id,
+   "validated", evidence). If your change may invalidate downstream nodes, set each affected
+   node to "stale". If something is incompatible/broken, set "breaking" with a note saying
+   exactly what breaks.
+5. Remove nodes/edges with graph_remove only when the artifact is deleted.
+6. Record only lineage you confirmed in code — never guess.
+`
+
+let claudeInfo: ClaudeInfo
+let ptyManager: PtyManager
+let mcpServer: GraphMcpServer
+const agentDiscovery = new AgentDiscovery()
+let graphStore: GraphStore | null = null
+let activeProject: string | null = null
+const startupWarnings: string[] = []
+
+function userDataPath(...parts: string[]): string {
+  return join(app.getPath('userData'), ...parts)
+}
+
+function setActiveProject(root: string): void {
+  if (activeProject === root) return
+  graphStore?.dispose()
+  activeProject = root
+  graphStore = new GraphStore(root)
+  graphStore.on('change', (payload) => broadcast('graph:changed', payload))
+  agentDiscovery.setProjectRoot(root)
+  broadcast('project:changed', root)
+  broadcast('graph:changed', { graph: graphStore.get(), event: null })
+}
+
+function collectWarnings(): void {
+  try {
+    const settingsPath = join(homedir(), '.claude', 'settings.json')
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8'))
+      if (settings?.hooks?.UserPromptSubmit) {
+        startupWarnings.push(
+          'Your global ~/.claude/settings.json has a UserPromptSubmit hook (UE screenshot capture). ' +
+            'It will run on every prompt in every terminal here, adding latency. Consider moving it ' +
+            "into the Unreal project's .claude/settings.json."
+        )
+      }
+    }
+  } catch {
+    // unreadable settings — nothing to warn about
+  }
+}
+
+function writeSupportFiles(): { protocolPath: string; settingsFallbackPath: string } {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  const protocolPath = userDataPath('graph-protocol.md')
+  writeFileSync(protocolPath, GRAPH_PROTOCOL)
+  // Fallback for CLIs without --append-system-prompt-file: a SessionStart hook that
+  // emits the protocol into context.
+  const settingsFallbackPath = userDataPath('session-settings.json')
+  writeFileSync(
+    settingsFallbackPath,
+    JSON.stringify(
+      {
+        hooks: {
+          SessionStart: [
+            { hooks: [{ type: 'command', command: `cmd /c type "${protocolPath}"` }] }
+          ]
+        }
+      },
+      null,
+      2
+    )
+  )
+  return { protocolPath, settingsFallbackPath }
+}
+
+function registerIpc(): void {
+  ipcMain.handle('term:create', (_e, opts: CreateTermOptions) => {
+    let isDir = false
+    try {
+      isDir = statSync(opts.cwd).isDirectory()
+    } catch {
+      isDir = false
+    }
+    if (!isDir) throw new Error(`Working folder does not exist: ${opts.cwd}`)
+    if (!activeProject) setActiveProject(opts.cwd)
+    return ptyManager.create(opts)
+  })
+  ipcMain.on('term:input', (_e, { termId, data }: { termId: string; data: string }) => {
+    ptyManager.write(termId, data)
+  })
+  ipcMain.on('term:resize', (_e, { termId, cols, rows }: { termId: string; cols: number; rows: number }) => {
+    ptyManager.resize(termId, cols, rows)
+  })
+  ipcMain.handle('term:dispose', (_e, termId: string) => ptyManager.dispose(termId))
+  ipcMain.handle('term:list', () => ptyManager.list())
+
+  ipcMain.handle('agents:list', () => agentDiscovery.list())
+  ipcMain.handle('agents:createStarter', (_e, name: string) => agentDiscovery.createStarter(name))
+
+  ipcMain.handle('project:pickFolder', async () => {
+    const win = getMainWindow()
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0]
+  })
+  ipcMain.handle('project:getActive', () => activeProject)
+  ipcMain.handle('project:setActive', (_e, root: string) => {
+    setActiveProject(root)
+    return activeProject
+  })
+
+  ipcMain.handle('graph:get', () => graphStore?.get() ?? null)
+  ipcMain.handle('graph:setPositions', (_e, positions: { id: string; position: { x: number; y: number } }[]) => {
+    graphStore?.setPositions(positions)
+  })
+  ipcMain.handle('graph:openWindow', () => {
+    openGraphWindow()
+  })
+
+  ipcMain.handle(
+    'prompt:inject',
+    (_e, { termId, text, autoSubmit }: { termId: string; text: string; autoSubmit: boolean }) => {
+      ptyManager.injectPrompt(termId, text, autoSubmit)
+    }
+  )
+
+  ipcMain.handle('app:diagnostics', (): Diagnostics => {
+    return {
+      claudeExePath: claudeInfo.exePath,
+      claudeVersion: claudeInfo.version,
+      mcpPort: mcpServer.port,
+      hasAppendSystemPromptFile: claudeInfo.hasAppendSystemPromptFile,
+      warnings: startupWarnings
+    }
+  })
+}
+
+app.whenReady().then(async () => {
+  try {
+    claudeInfo = await detectClaude()
+  } catch (err) {
+    dialog.showErrorBox('Claude Code CLI not found', String(err))
+    app.quit()
+    return
+  }
+
+  collectWarnings()
+  const { protocolPath, settingsFallbackPath } = writeSupportFiles()
+
+  mcpServer = new GraphMcpServer(() => graphStore)
+  await mcpServer.start()
+
+  ptyManager = new PtyManager({
+    claudeExePath: claudeInfo.exePath,
+    hasAppendSystemPromptFile: claudeInfo.hasAppendSystemPromptFile,
+    protocolPath,
+    settingsFallbackPath,
+    writeMcpConfig: (termId) => writeMcpConfigFile(app.getPath('userData'), termId, mcpServer.port),
+    onData: (termId, data) => getMainWindow()?.webContents.send('term:data', { termId, data }),
+    onExit: (termId, exitCode) => getMainWindow()?.webContents.send('term:exit', { termId, exitCode })
+  })
+
+  agentDiscovery.on('changed', () => broadcast('agents:changed', null))
+
+  registerIpc()
+  createMainWindow()
+})
+
+app.on('window-all-closed', () => {
+  app.quit()
+})
+
+app.on('before-quit', () => {
+  ptyManager?.disposeAll()
+  graphStore?.dispose()
+  mcpServer?.stop()
+  agentDiscovery.dispose()
+})
