@@ -102,3 +102,17 @@ export interface UpdateStatus {
   /** subject line of the newest remote commit */
   latest: string
 }
+
+export interface TermUsage {
+  termId: string
+  model?: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationTokens: number
+  cacheReadTokens: number
+  /** total context size of the most recent turn (input + cache + output), ~how full the window is */
+  contextTokens: number
+  messages: number
+  /** estimated USD; null when the model's pricing is unknown */
+  costUsd: number | null
+}

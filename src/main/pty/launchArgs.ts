@@ -1,4 +1,6 @@
 export interface LaunchArgOptions {
+  /** used as --session-id so the transcript path is deterministic (for usage tracking) */
+  sessionId: string
   agentName?: string
   model?: string
   dangerous?: boolean
@@ -11,7 +13,7 @@ export interface LaunchArgOptions {
 }
 
 export function buildLaunchArgs(o: LaunchArgOptions): string[] {
-  const args: string[] = ['--mcp-config', o.mcpConfigPath]
+  const args: string[] = ['--session-id', o.sessionId, '--mcp-config', o.mcpConfigPath]
   if (o.hasAppendSystemPromptFile) {
     args.push('--append-system-prompt-file', o.protocolPath)
   } else {

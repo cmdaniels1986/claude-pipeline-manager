@@ -4,6 +4,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useEffect, useRef, useState } from 'react'
 import { attachTermData, getTermTailText, useTerminalStore, type PaneRec } from '../stores/terminalStore'
+import { fmtCost, fmtTokens } from './usageFormat'
 
 const TERM_THEME = {
   background: '#0d1117',
@@ -27,6 +28,7 @@ export function TerminalPane({
   const setLive = useTerminalStore((s) => s.setLive)
   const removePane = useTerminalStore((s) => s.removePane)
   const addPane = useTerminalStore((s) => s.addPane)
+  const usage = useTerminalStore((s) => (pane.termId ? s.usage[pane.termId] : undefined))
   const [showLog, setShowLog] = useState(false)
 
   useEffect(() => {
@@ -161,6 +163,16 @@ export function TerminalPane({
         </div>
       )}
       <div className="terminal-pane-body" ref={hostRef} />
+      {usage && pane.status !== 'exited' && (
+        <div className="usage-strip" title={usage.model ? `model: ${usage.model}` : undefined}>
+          <span>↑ {fmtTokens(usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens)} in</span>
+          <span>↓ {fmtTokens(usage.outputTokens)} out</span>
+          {usage.cacheReadTokens > 0 && (
+            <span className="usage-cache">{fmtTokens(usage.cacheReadTokens)} cached</span>
+          )}
+          {fmtCost(usage.costUsd) && <span className="usage-cost">≈ {fmtCost(usage.costUsd)}</span>}
+        </div>
+      )}
       {pane.status === 'exited' && (
         <div className="terminal-pane-exitbar">
           <div className="exitbar-row">

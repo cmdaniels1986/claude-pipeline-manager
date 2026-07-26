@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { TermUsage } from '../../../shared/types'
 
 export interface PaneRec {
   paneId: string
@@ -18,6 +19,8 @@ export interface PaneRec {
 interface TerminalStore {
   panes: PaneRec[]
   activePaneId: string | null
+  usage: Record<string, TermUsage>
+  setUsage: (usage: TermUsage) => void
   addPane: (opts: {
     cwd: string
     agentName?: string
@@ -46,6 +49,8 @@ function withoutPane(s: TerminalStore, paneId: string): Pick<TerminalStore, 'pan
 export const useTerminalStore = create<TerminalStore>((set) => ({
   panes: [],
   activePaneId: null,
+  usage: {},
+  setUsage: (usage) => set((s) => ({ usage: { ...s.usage, [usage.termId]: usage } })),
   addPane: (opts) =>
     set((s) => {
       const paneId = `pane-${++paneCounter}`
@@ -151,6 +156,9 @@ if (typeof window !== 'undefined' && window.api) {
   })
   window.api.onTermAdopt((opts) => {
     useTerminalStore.getState().adoptPane(opts)
+  })
+  window.api.onTermUsage((usage) => {
+    useTerminalStore.getState().setUsage(usage)
   })
   ;(window as unknown as Record<string, unknown>).__termDebug = {
     tail: (termId: string, chars = 4000): string => (debugTails.get(termId) ?? '').slice(-chars)

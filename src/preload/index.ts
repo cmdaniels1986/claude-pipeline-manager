@@ -6,6 +6,7 @@ import type {
   GraphChangedPayload,
   GraphState,
   TermInfo,
+  TermUsage,
   UpdateStatus
 } from '../shared/types'
 
@@ -29,6 +30,7 @@ const api = {
   termPopout: (opts: { termId: string }): Promise<void> => ipcRenderer.invoke('term:popout', opts),
   onTermData: subscribe<{ termId: string; data: string }>('term:data'),
   onTermExit: subscribe<{ termId: string; exitCode: number }>('term:exit'),
+  onTermUsage: subscribe<TermUsage>('term:usage'),
   onTermAdopt: subscribe<{ termId: string; label: string; cwd: string; color?: string }>('term:adopt'),
 
   // agents

@@ -10,6 +10,7 @@ import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
+import { UsageTracker } from './usage/UsageTracker'
 import {
   broadcast,
   closeTerminalWindow,
@@ -67,6 +68,7 @@ function sendToTermHost(termId: string, channel: string, payload: unknown): void
   }
 }
 const agentDiscovery = new AgentDiscovery()
+let usageTracker: UsageTracker
 let graphStore: GraphStore | null = null
 let activeProject: string | null = null
 const startupWarnings: string[] = []
@@ -140,6 +142,7 @@ function registerIpc(): void {
     if (!activeProject) setActiveProject(opts.cwd)
     const info = ptyManager.create(opts)
     termHosts.set(info.termId, e.sender)
+    usageTracker.track(info.termId)
     return info
   })
   ipcMain.handle('term:claim', (e, termId: string) => {
@@ -176,6 +179,7 @@ function registerIpc(): void {
   ipcMain.handle('term:dispose', (_e, termId: string) => {
     ptyManager.dispose(termId)
     termHosts.delete(termId)
+    usageTracker.untrack(termId)
     closeTerminalWindow(termId)
   })
   ipcMain.handle('term:list', () => ptyManager.list())
@@ -279,12 +283,16 @@ app.whenReady().then(async () => {
   mcpServer = new GraphMcpServer(() => graphStore)
   await mcpServer.start()
 
+  usageTracker = new UsageTracker((usage) => sendToTermHost(usage.termId, 'term:usage', usage))
+  await usageTracker.start()
+
   ptyManager = new PtyManager({
     claudeExePath: claudeInfo.exePath,
     hasAppendSystemPromptFile: claudeInfo.hasAppendSystemPromptFile,
     protocolPath,
     settingsFallbackPath,
     writeMcpConfig: (termId) => writeMcpConfigFile(app.getPath('userData'), termId, mcpServer.port),
+    usageEnv: () => usageTracker.envFor(),
     onData: (termId, data) => sendToTermHost(termId, 'term:data', { termId, data }),
     onExit: (termId, exitCode) => sendToTermHost(termId, 'term:exit', { termId, exitCode })
   })
@@ -305,4 +313,5 @@ app.on('before-quit', () => {
   graphStore?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
+  usageTracker?.dispose()
 })

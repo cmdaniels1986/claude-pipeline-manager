@@ -19,6 +19,8 @@ export interface PtyManagerDeps {
   settingsFallbackPath: string
   /** writes the per-terminal mcp-config file and returns its path */
   writeMcpConfig: (termId: string) => string
+  /** extra env for each spawned session (OTEL telemetry pointing at the usage receiver) */
+  usageEnv: () => Record<string, string>
   onData: (termId: string, data: string) => void
   onExit: (termId: string, exitCode: number) => void
 }
@@ -32,6 +34,7 @@ export class PtyManager {
     const termId = randomUUID()
     const mcpConfigPath = this.deps.writeMcpConfig(termId)
     const args = buildLaunchArgs({
+      sessionId: termId,
       agentName: opts.agentName,
       model: opts.model,
       dangerous: opts.dangerous,
@@ -50,7 +53,8 @@ export class PtyManager {
       env: {
         ...(process.env as Record<string, string>),
         TERM: 'xterm-256color',
-        COLORTERM: 'truecolor'
+        COLORTERM: 'truecolor',
+        ...this.deps.usageEnv()
       }
     })
 

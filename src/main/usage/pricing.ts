@@ -1,0 +1,55 @@
+/**
+ * Per-million-token pricing (USD) for estimating session cost. Cache-write is
+ * 1.25x input (5-minute TTL), cache-read is 0.1x input. Matched by model-id
+ * prefix so dated/suffixed variants (e.g. claude-opus-4-8[1m]) still resolve.
+ * Prices are estimates for display only — subscriptions (Max/Pro) don't bill
+ * per token; this shows consumption, not a charge.
+ */
+interface Rate {
+  input: number
+  output: number
+}
+
+const RATES: { prefix: string; rate: Rate }[] = [
+  { prefix: 'claude-fable-5', rate: { input: 10, output: 50 } },
+  { prefix: 'claude-mythos-5', rate: { input: 10, output: 50 } },
+  { prefix: 'claude-opus-4-8', rate: { input: 5, output: 25 } },
+  { prefix: 'claude-opus-4-7', rate: { input: 5, output: 25 } },
+  { prefix: 'claude-opus-4-6', rate: { input: 5, output: 25 } },
+  { prefix: 'claude-opus-4-5', rate: { input: 5, output: 25 } },
+  { prefix: 'claude-opus', rate: { input: 5, output: 25 } },
+  { prefix: 'claude-sonnet-4-6', rate: { input: 3, output: 15 } },
+  { prefix: 'claude-sonnet', rate: { input: 3, output: 15 } },
+  { prefix: 'claude-haiku-4-5', rate: { input: 1, output: 5 } },
+  { prefix: 'claude-haiku', rate: { input: 1, output: 5 } }
+]
+
+const CACHE_WRITE_MULT = 1.25
+const CACHE_READ_MULT = 0.1
+
+export interface TokenTotals {
+  input: number
+  output: number
+  cacheCreation: number
+  cacheRead: number
+}
+
+function rateFor(model: string | undefined): Rate | null {
+  if (!model) return null
+  const m = model.toLowerCase()
+  return RATES.find((r) => m.startsWith(r.prefix))?.rate ?? null
+}
+
+/** Estimated USD cost for accumulated token totals on a model. Null if the
+ *  model isn't in the pricing table. */
+export function estimateCost(model: string | undefined, t: TokenTotals): number | null {
+  const rate = rateFor(model)
+  if (!rate) return null
+  const perM = (n: number, price: number): number => (n / 1_000_000) * price
+  return (
+    perM(t.input, rate.input) +
+    perM(t.output, rate.output) +
+    perM(t.cacheCreation, rate.input * CACHE_WRITE_MULT) +
+    perM(t.cacheRead, rate.input * CACHE_READ_MULT)
+  )
+}

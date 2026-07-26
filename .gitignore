@@ -5,3 +5,5 @@ dist/
 *.tsbuildinfo
 .update-restart
 /tmp
+scripts/e2e-*.js
+scripts/e2e-*.sh
