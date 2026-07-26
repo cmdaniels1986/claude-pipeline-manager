@@ -53,6 +53,11 @@ const api = {
   promptInject: (opts: { termId: string; text: string; autoSubmit: boolean }): Promise<void> =>
     ipcRenderer.invoke('prompt:inject', opts),
 
+  // node source files
+  openFile: (path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('file:open', path),
+  revealFile: (path: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('file:reveal', path),
+
   // diagnostics
   getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics'),
   checkLogin: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('app:checkLogin'),

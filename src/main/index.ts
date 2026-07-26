@@ -1,7 +1,7 @@
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { isAbsolute, join } from 'path'
 import type { CreateTermOptions, Diagnostics } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
@@ -219,6 +219,25 @@ function registerIpc(): void {
       hasAppendSystemPromptFile: claudeInfo.hasAppendSystemPromptFile,
       warnings: startupWarnings
     }
+  })
+
+  const resolveNodePath = (relOrAbs: string): string | null => {
+    if (!relOrAbs) return null
+    const full = isAbsolute(relOrAbs) ? relOrAbs : activeProject ? join(activeProject, relOrAbs) : relOrAbs
+    return existsSync(full) ? full : null
+  }
+
+  ipcMain.handle('file:open', async (_e, path: string) => {
+    const full = resolveNodePath(path)
+    if (!full) return { ok: false, error: `File not found: ${path} (renamed or deleted?)` }
+    const err = await shell.openPath(full)
+    return err ? { ok: false, error: err } : { ok: true }
+  })
+  ipcMain.handle('file:reveal', (_e, path: string) => {
+    const full = resolveNodePath(path)
+    if (!full) return { ok: false, error: `File not found: ${path} (renamed or deleted?)` }
+    shell.showItemInFolder(full)
+    return { ok: true }
   })
 
   ipcMain.handle('app:checkLogin', () => checkLogin(claudeInfo.exePath))

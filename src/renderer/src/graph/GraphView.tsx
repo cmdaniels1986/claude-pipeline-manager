@@ -10,10 +10,10 @@ import {
   type Node
 } from '@xyflow/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GraphState } from '../../../shared/types'
+import type { GraphState, TermInfo } from '../../../shared/types'
 import { useGraphStore } from './graphStore'
 import { layoutGraph } from './layout'
-import { NodeContextMenu } from './NodeContextMenu'
+import { NodeContextMenu, type Provenance } from './NodeContextMenu'
 import { PipelineNode } from './PipelineNode'
 import { TerminalPickerDialog } from './TerminalPickerDialog'
 
@@ -51,6 +51,7 @@ export function GraphView(): React.JSX.Element {
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [terms, setTerms] = useState<TermInfo[]>([])
   const layoutCache = useRef(new Map<string, { x: number; y: number }>())
 
   useEffect(() => {
@@ -58,6 +59,46 @@ export function GraphView(): React.JSX.Element {
     return window.api.onGraphChanged(({ graph: g, event }) => setGraph(g, event))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // keep a fresh terminal list for mapping event termIds → labels/colors
+  useEffect(() => {
+    const refresh = (): void => {
+      void window.api.termList().then(setTerms)
+    }
+    refresh()
+    const id = window.setInterval(refresh, 4000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const nodePath = (nodeId: string): string | undefined =>
+    graph?.nodes.find((n) => n.id === nodeId)?.meta.path
+
+  const provenanceFor = (nodeId: string): Provenance | null => {
+    if (!graph) return null
+    const ev = [...graph.events].reverse().find((e) => e.termId && e.summary.includes(nodeId))
+    if (!ev?.termId) return null
+    const term = terms.find((t) => t.termId === ev.termId)
+    return { label: term?.label ?? 'a closed session', color: term?.color }
+  }
+
+  const openNodeFile = (nodeId: string): void => {
+    const path = nodePath(nodeId)
+    if (!path) {
+      showToast(`"${nodeId}" has no source file recorded in the graph.`)
+      return
+    }
+    void window.api.openFile(path).then((r) => {
+      if (!r.ok) showToast(r.error ?? 'Could not open file.')
+    })
+  }
+
+  const revealNodeFile = (nodeId: string): void => {
+    const path = nodePath(nodeId)
+    if (!path) return
+    void window.api.revealFile(path).then((r) => {
+      if (!r.ok) showToast(r.error ?? 'Could not reveal file.')
+    })
+  }
 
   // Rebuild React Flow nodes/edges whenever the graph changes; auto-layout any
   // nodes without a persisted position, then persist what elk decided.
@@ -155,6 +196,7 @@ export function GraphView(): React.JSX.Element {
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onNodeClick={(_e, node) => select(node.id)}
+        onNodeDoubleClick={(_e, node) => openNodeFile(node.id)}
         onPaneClick={() => {
           select(null)
           setMenu(null)
@@ -185,6 +227,16 @@ export function GraphView(): React.JSX.Element {
           x={menu.x}
           y={menu.y}
           nodeId={menu.nodeId}
+          path={nodePath(menu.nodeId)}
+          lastTouched={provenanceFor(menu.nodeId)}
+          onOpenFile={() => {
+            setMenu(null)
+            openNodeFile(menu.nodeId)
+          }}
+          onReveal={() => {
+            setMenu(null)
+            revealNodeFile(menu.nodeId)
+          }}
           onPick={(text) => {
             setMenu(null)
             setPendingPrompt(text)

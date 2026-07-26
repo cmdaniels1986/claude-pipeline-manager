@@ -622,9 +622,35 @@ button.danger:hover {
 .context-menu-title {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-weight: 600;
-  padding: 5px 9px;
+  padding: 5px 9px 3px;
+}
+.context-menu-meta {
+  padding: 0 9px 6px;
   border-bottom: 1px solid #3d444d;
   margin-bottom: 3px;
+}
+.ctx-path {
+  font-size: 11px;
+  color: #8b949e;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  word-break: break-all;
+}
+.ctx-prov {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 3px;
+}
+.context-menu-divider {
+  height: 1px;
+  background: #3d444d;
+  margin: 4px 0;
+}
+.context-menu button:disabled {
+  color: #545d68;
+  cursor: default;
+}
+.context-menu button:disabled:hover {
+  background: transparent;
 }
 .context-menu button {
   border: none;
