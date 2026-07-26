@@ -12,9 +12,16 @@ if (!expression) {
   process.exit(1)
 }
 
+const matchIdx = process.argv.indexOf('--match')
+const matchStr = matchIdx !== -1 ? process.argv[matchIdx + 1] : null
+
 const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json()
 const pages = targets.filter((t) => t.type === 'page' && t.url.includes('localhost:5173'))
-const target = pages.find((t) => (wantGraphWindow ? t.url.includes('graph') : !t.url.includes('graph')))
+const target = matchStr
+  ? pages.find((t) => t.url.includes(matchStr))
+  : pages.find((t) =>
+      wantGraphWindow ? t.url.includes('graph') : !t.url.includes('graph') && !t.url.includes('/term/')
+    )
 if (!target) {
   console.error('No matching renderer target. Targets:', pages.map((p) => p.url))
   process.exit(1)

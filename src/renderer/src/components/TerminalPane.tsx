@@ -12,9 +12,18 @@ const TERM_THEME = {
   selectionBackground: '#264f78'
 }
 
-export function TerminalPane({ pane }: { pane: PaneRec }): React.JSX.Element {
+export function TerminalPane({
+  pane,
+  isActive = true,
+  showHeader = true
+}: {
+  pane: PaneRec
+  isActive?: boolean
+  showHeader?: boolean
+}): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const startedRef = useRef(false)
+  const termRef = useRef<Terminal | null>(null)
   const setLive = useTerminalStore((s) => s.setLive)
   const removePane = useTerminalStore((s) => s.removePane)
 
@@ -30,6 +39,7 @@ export function TerminalPane({ pane }: { pane: PaneRec }): React.JSX.Element {
       scrollback: 8000,
       theme: TERM_THEME
     })
+    termRef.current = term
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.loadAddon(new Unicode11Addon())
@@ -48,29 +58,41 @@ export function TerminalPane({ pane }: { pane: PaneRec }): React.JSX.Element {
     let termId: string | null = null
     let disposed = false
 
-    // Spawn only after the first fit so the CLI boots at the real pane size
-    window.api
-      .termCreate({
-        cwd: pane.cwd,
-        agentName: pane.agentName,
-        model: pane.model,
-        cols: term.cols,
-        rows: term.rows
-      })
-      .then((info) => {
-        if (disposed) {
-          void window.api.termDispose(info.termId)
-          return
-        }
-        termId = info.termId
-        setLive(pane.paneId, info.termId, info.label)
-        detach = attachTermData(info.termId, (data) => term.write(data))
-        term.onData((data) => window.api.termInput(info.termId, data))
-        term.focus()
-      })
-      .catch((err) => {
-        term.writeln(`\r\nFailed to start Claude: ${String(err)}`)
-      })
+    const wire = (id: string): void => {
+      termId = id
+      detach = attachTermData(id, (data) => term.write(data))
+      term.onData((data) => window.api.termInput(id, data))
+      term.focus()
+    }
+
+    if (pane.mode === 'attach' && pane.termId) {
+      wire(pane.termId)
+      // the session was rendering elsewhere: a resize at our (different) pane
+      // size makes the TUI repaint its full screen here
+      window.api.termResize(pane.termId, term.cols, term.rows)
+    } else {
+      // spawn only after the first fit so the CLI boots at the real pane size
+      window.api
+        .termCreate({
+          cwd: pane.cwd,
+          agentName: pane.agentName,
+          model: pane.model,
+          color: pane.color,
+          cols: term.cols,
+          rows: term.rows
+        })
+        .then((info) => {
+          if (disposed) {
+            void window.api.termDispose(info.termId)
+            return
+          }
+          setLive(pane.paneId, info.termId, info.label)
+          wire(info.termId)
+        })
+        .catch((err) => {
+          term.writeln(`\r\nFailed to start Claude: ${String(err)}`)
+        })
+    }
 
     let resizeTimer: number | undefined
     const observer = new ResizeObserver(() => {
@@ -87,10 +109,15 @@ export function TerminalPane({ pane }: { pane: PaneRec }): React.JSX.Element {
       observer.disconnect()
       window.clearTimeout(resizeTimer)
       detach?.()
+      termRef.current = null
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (isActive) termRef.current?.focus()
+  }, [isActive])
 
   const close = (): void => {
     if (pane.termId) void window.api.termDispose(pane.termId)
@@ -99,15 +126,21 @@ export function TerminalPane({ pane }: { pane: PaneRec }): React.JSX.Element {
 
   return (
     <div className="terminal-pane">
-      <div className="terminal-pane-header">
-        <span className="terminal-pane-title" title={pane.cwd}>
-          {pane.label}
-          <span className="terminal-pane-cwd"> — {pane.cwd}</span>
-        </span>
-        <button className="icon-button" onClick={close} title="Close terminal">
-          ✕
-        </button>
-      </div>
+      {showHeader && (
+        <div
+          className="terminal-pane-header"
+          style={pane.color ? { boxShadow: `inset 0 2px 0 ${pane.color}` } : undefined}
+        >
+          <span className="terminal-pane-title" title={pane.cwd}>
+            {pane.color && <span className="agent-color-dot" style={{ background: pane.color }} />}
+            {pane.label}
+            <span className="terminal-pane-cwd"> — {pane.cwd}</span>
+          </span>
+          <button className="icon-button" onClick={close} title="Close terminal">
+            ✕
+          </button>
+        </div>
+      )}
       <div className="terminal-pane-body" ref={hostRef} />
       {pane.status === 'exited' && (
         <div className="terminal-pane-overlay">

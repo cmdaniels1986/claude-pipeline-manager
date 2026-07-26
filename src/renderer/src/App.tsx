@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Diagnostics, UpdateStatus } from '../../shared/types'
 import { GraphDock } from './components/GraphDock'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
-import { TerminalGrid } from './components/TerminalGrid'
+import { TerminalTabs } from './components/TerminalTabs'
 
 const MIN_GRAPH_WIDTH = 340
 const MIN_TERMINALS_WIDTH = 420
@@ -141,7 +141,7 @@ export default function App(): React.JSX.Element {
 
       <main className="app-main split">
         <div className="split-left">
-          <TerminalGrid />
+          <TerminalTabs onNewTerminal={() => setDialogOpen(true)} />
         </div>
         {showGraph && (
           <>

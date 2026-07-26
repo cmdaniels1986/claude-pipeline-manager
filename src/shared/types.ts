@@ -56,6 +56,7 @@ export interface TermInfo {
   label: string
   cwd: string
   agentName?: string
+  color?: string
   alive: boolean
 }
 
@@ -63,9 +64,22 @@ export interface CreateTermOptions {
   cwd: string
   agentName?: string
   model?: string
+  color?: string
   cols: number
   rows: number
 }
+
+/** tab/agent accent colors offered in the New Terminal dialog */
+export const AGENT_COLORS = [
+  '#58a6ff',
+  '#3fb950',
+  '#e3b341',
+  '#f0883e',
+  '#f85149',
+  '#bc8cff',
+  '#39c5cf',
+  '#ff7b72'
+] as const
 
 export interface Diagnostics {
   claudeExePath: string

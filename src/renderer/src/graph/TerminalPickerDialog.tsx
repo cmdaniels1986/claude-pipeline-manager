@@ -34,7 +34,11 @@ export function TerminalPickerDialog({
           <div className="term-picker-list">
             {terms.map((t) => (
               <button key={t.termId} onClick={() => void send(t)} title={t.cwd}>
-                ▶ {t.label}
+                <span
+                  className="agent-color-dot"
+                  style={{ background: t.color ?? '#8b949e' }}
+                />
+                {t.label}
               </button>
             ))}
           </div>

@@ -10,7 +10,14 @@ import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
 import { detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
-import { broadcast, createMainWindow, getMainWindow, openGraphWindow } from './windows'
+import {
+  broadcast,
+  closeTerminalWindow,
+  createMainWindow,
+  getMainWindow,
+  openGraphWindow,
+  openTerminalWindow
+} from './windows'
 
 if (!app.isPackaged) {
   // dev-only: allows driving the renderer over CDP for automated verification
@@ -48,6 +55,17 @@ Rules:
 let claudeInfo: ClaudeInfo
 let ptyManager: PtyManager
 let mcpServer: GraphMcpServer
+/** which renderer window currently hosts each terminal's UI */
+const termHosts = new Map<string, Electron.WebContents>()
+
+function sendToTermHost(termId: string, channel: string, payload: unknown): void {
+  const host = termHosts.get(termId)
+  if (host && !host.isDestroyed()) {
+    host.send(channel, payload)
+  } else {
+    getMainWindow()?.webContents.send(channel, payload)
+  }
+}
 const agentDiscovery = new AgentDiscovery()
 let graphStore: GraphStore | null = null
 let activeProject: string | null = null
@@ -111,7 +129,7 @@ function writeSupportFiles(): { protocolPath: string; settingsFallbackPath: stri
 }
 
 function registerIpc(): void {
-  ipcMain.handle('term:create', (_e, opts: CreateTermOptions) => {
+  ipcMain.handle('term:create', (e, opts: CreateTermOptions) => {
     let isDir = false
     try {
       isDir = statSync(opts.cwd).isDirectory()
@@ -120,7 +138,34 @@ function registerIpc(): void {
     }
     if (!isDir) throw new Error(`Working folder does not exist: ${opts.cwd}`)
     if (!activeProject) setActiveProject(opts.cwd)
-    return ptyManager.create(opts)
+    const info = ptyManager.create(opts)
+    termHosts.set(info.termId, e.sender)
+    return info
+  })
+  ipcMain.handle('term:claim', (e, termId: string) => {
+    termHosts.set(termId, e.sender)
+  })
+  ipcMain.handle('term:popout', (_e, { termId }: { termId: string }) => {
+    const info = ptyManager.list().find((t) => t.termId === termId)
+    if (!info?.alive) throw new Error('Terminal is not running')
+    openTerminalWindow(termId, info.label, info.cwd, info.color, () => {
+      // window closed: if the session is still alive, hand it back to the main
+      // window as a tab instead of killing it
+      const current = ptyManager.list().find((t) => t.termId === termId)
+      if (!current?.alive) return
+      const main = getMainWindow()
+      if (main && !main.isDestroyed()) {
+        termHosts.set(termId, main.webContents)
+        main.webContents.send('term:adopt', {
+          termId,
+          label: current.label,
+          cwd: current.cwd,
+          color: current.color
+        })
+      } else {
+        ptyManager.dispose(termId)
+      }
+    })
   })
   ipcMain.on('term:input', (_e, { termId, data }: { termId: string; data: string }) => {
     ptyManager.write(termId, data)
@@ -128,7 +173,11 @@ function registerIpc(): void {
   ipcMain.on('term:resize', (_e, { termId, cols, rows }: { termId: string; cols: number; rows: number }) => {
     ptyManager.resize(termId, cols, rows)
   })
-  ipcMain.handle('term:dispose', (_e, termId: string) => ptyManager.dispose(termId))
+  ipcMain.handle('term:dispose', (_e, termId: string) => {
+    ptyManager.dispose(termId)
+    termHosts.delete(termId)
+    closeTerminalWindow(termId)
+  })
   ipcMain.handle('term:list', () => ptyManager.list())
 
   ipcMain.handle('agents:list', () => agentDiscovery.list())
@@ -215,8 +264,8 @@ app.whenReady().then(async () => {
     protocolPath,
     settingsFallbackPath,
     writeMcpConfig: (termId) => writeMcpConfigFile(app.getPath('userData'), termId, mcpServer.port),
-    onData: (termId, data) => getMainWindow()?.webContents.send('term:data', { termId, data }),
-    onExit: (termId, exitCode) => getMainWindow()?.webContents.send('term:exit', { termId, exitCode })
+    onData: (termId, data) => sendToTermHost(termId, 'term:data', { termId, data }),
+    onExit: (termId, exitCode) => sendToTermHost(termId, 'term:exit', { termId, exitCode })
   })
 
   agentDiscovery.on('changed', () => broadcast('agents:changed', null))

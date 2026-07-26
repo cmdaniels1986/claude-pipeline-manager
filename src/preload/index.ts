@@ -25,8 +25,11 @@ const api = {
     ipcRenderer.send('term:resize', { termId, cols, rows }),
   termDispose: (termId: string): Promise<void> => ipcRenderer.invoke('term:dispose', termId),
   termList: (): Promise<TermInfo[]> => ipcRenderer.invoke('term:list'),
+  termClaim: (termId: string): Promise<void> => ipcRenderer.invoke('term:claim', termId),
+  termPopout: (opts: { termId: string }): Promise<void> => ipcRenderer.invoke('term:popout', opts),
   onTermData: subscribe<{ termId: string; data: string }>('term:data'),
   onTermExit: subscribe<{ termId: string; exitCode: number }>('term:exit'),
+  onTermAdopt: subscribe<{ termId: string; label: string; cwd: string; color?: string }>('term:adopt'),
 
   // agents
   agentsList: (): Promise<AgentInfo[]> => ipcRenderer.invoke('agents:list'),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AgentInfo } from '../../../shared/types'
+import { AGENT_COLORS, type AgentInfo } from '../../../shared/types'
 import { useTerminalStore } from '../stores/terminalStore'
 
 const NO_AGENT = '__none__'
@@ -13,11 +13,13 @@ export function NewTerminalDialog({
   onClose: () => void
 }): React.JSX.Element {
   const addPane = useTerminalStore((s) => s.addPane)
+  const paneCount = useTerminalStore((s) => s.panes.length)
   const [cwd, setCwd] = useState(defaultCwd ?? '')
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [agentChoice, setAgentChoice] = useState(NO_AGENT)
   const [newAgentName, setNewAgentName] = useState('')
   const [model, setModel] = useState('')
+  const [color, setColor] = useState<string>(AGENT_COLORS[paneCount % AGENT_COLORS.length])
   const [error, setError] = useState<string | null>(null)
 
   const refreshAgents = (): void => {
@@ -55,7 +57,8 @@ export function NewTerminalDialog({
     addPane({
       cwd: cwd.trim(),
       agentName: agentChoice !== NO_AGENT && agentChoice !== NEW_AGENT ? agentChoice : undefined,
-      model: model.trim() || undefined
+      model: model.trim() || undefined,
+      color
     })
     onClose()
   }
@@ -109,6 +112,19 @@ export function NewTerminalDialog({
           placeholder="default from your settings"
           spellCheck={false}
         />
+
+        <label>Agent color</label>
+        <div className="color-row">
+          {AGENT_COLORS.map((c) => (
+            <button
+              key={c}
+              className={`color-swatch${color === c ? ' selected' : ''}`}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+              title={c}
+            />
+          ))}
+        </div>
 
         {error && <p className="modal-note">{error}</p>}
 

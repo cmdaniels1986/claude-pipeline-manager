@@ -8,6 +8,7 @@ interface TermRec {
   pty: IPty
   cwd: string
   agentName?: string
+  color?: string
   alive: boolean
 }
 
@@ -52,7 +53,14 @@ export class PtyManager {
       }
     })
 
-    const rec: TermRec = { termId, pty, cwd: opts.cwd, agentName: opts.agentName, alive: true }
+    const rec: TermRec = {
+      termId,
+      pty,
+      cwd: opts.cwd,
+      agentName: opts.agentName,
+      color: opts.color,
+      alive: true
+    }
     this.terms.set(termId, rec)
 
     pty.onData((data) => this.deps.onData(termId, data))
@@ -116,6 +124,7 @@ export class PtyManager {
       label: rec.agentName ? `${rec.agentName} · ${cwdBase}` : `claude · ${cwdBase}`,
       cwd: rec.cwd,
       agentName: rec.agentName,
+      color: rec.color,
       alive: rec.alive
     }
   }

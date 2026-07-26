@@ -3,8 +3,10 @@ import '@xterm/xterm/css/xterm.css'
 import '@xyflow/react/dist/style.css'
 import './styles.css'
 import App from './App'
+import TermWindowApp from './components/TermWindowApp'
 import GraphApp from './graph/GraphApp'
 
-const isGraph = window.location.hash.startsWith('#/graph')
+const hash = window.location.hash
+const page = hash.startsWith('#/graph') ? <GraphApp /> : hash.startsWith('#/term/') ? <TermWindowApp /> : <App />
 
-createRoot(document.getElementById('root')!).render(isGraph ? <GraphApp /> : <App />)
+createRoot(document.getElementById('root')!).render(page)

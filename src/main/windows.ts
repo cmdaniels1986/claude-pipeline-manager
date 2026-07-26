@@ -1,8 +1,9 @@
-import { BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 
 let mainWindow: BrowserWindow | null = null
 let graphWindow: BrowserWindow | null = null
+const termWindows = new Map<string, BrowserWindow>()
 
 function baseOptions(): Electron.BrowserWindowConstructorOptions {
   return {
@@ -35,6 +36,8 @@ export function createMainWindow(): BrowserWindow {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+    // closing the main window closes the whole app (incl. popped-out terminals)
+    app.quit()
   })
   loadRenderer(mainWindow, '')
   return mainWindow
@@ -62,4 +65,33 @@ export function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload)
   }
+}
+
+export function openTerminalWindow(
+  termId: string,
+  label: string,
+  cwd: string,
+  color: string | undefined,
+  onClosed: () => void
+): BrowserWindow {
+  const existing = termWindows.get(termId)
+  if (existing && !existing.isDestroyed()) {
+    existing.focus()
+    return existing
+  }
+  const win = new BrowserWindow({ ...baseOptions(), width: 1000, height: 660, title: label })
+  termWindows.set(termId, win)
+  win.on('ready-to-show', () => win.show())
+  win.on('closed', () => {
+    termWindows.delete(termId)
+    onClosed()
+  })
+  const params = new URLSearchParams({ label, cwd, ...(color ? { color } : {}) })
+  loadRenderer(win, `/term/${termId}?${params.toString()}`)
+  return win
+}
+
+export function closeTerminalWindow(termId: string): void {
+  const win = termWindows.get(termId)
+  if (win && !win.isDestroyed()) win.close()
 }
