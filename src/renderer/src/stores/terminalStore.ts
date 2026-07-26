@@ -21,6 +21,8 @@ interface TerminalStore {
   activePaneId: string | null
   usage: Record<string, TermUsage>
   setUsage: (usage: TermUsage) => void
+  /** true when sessions bill per-token (API key) — cost is real, not notional */
+  billingReal: boolean
   addPane: (opts: {
     cwd: string
     agentName?: string
@@ -51,6 +53,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   activePaneId: null,
   usage: {},
   setUsage: (usage) => set((s) => ({ usage: { ...s.usage, [usage.termId]: usage } })),
+  billingReal: false,
   addPane: (opts) =>
     set((s) => {
       const paneId = `pane-${++paneCounter}`
@@ -160,6 +163,7 @@ if (typeof window !== 'undefined' && window.api) {
   window.api.onTermUsage((usage) => {
     useTerminalStore.getState().setUsage(usage)
   })
+  void window.api.getDiagnostics().then((d) => useTerminalStore.setState({ billingReal: d.apiKeyBilling }))
   ;(window as unknown as Record<string, unknown>).__termDebug = {
     tail: (termId: string, chars = 4000): string => (debugTails.get(termId) ?? '').slice(-chars)
   }

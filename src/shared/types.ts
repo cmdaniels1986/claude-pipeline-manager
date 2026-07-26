@@ -88,6 +88,8 @@ export interface Diagnostics {
   claudeVersion: string
   mcpPort: number
   hasAppendSystemPromptFile: boolean
+  /** ANTHROPIC_API_KEY present → sessions bill per-token (real $); else subscription (notional) */
+  apiKeyBilling: boolean
   warnings: string[]
 }
 

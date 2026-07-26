@@ -72,28 +72,31 @@ export class GraphMcpServer {
 
   private buildServer(termId: string | null): McpServer {
     const server = new McpServer({ name: 'graph', version: '1.0.0' })
+    // compact JSON (no pretty-print) — these strings are fresh model-context tokens on every call
     const text = (value: unknown) => ({
-      content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }]
+      content: [{ type: 'text' as const, text: JSON.stringify(value) }]
     })
-    const noStore = () =>
-      text({ error: 'No active project — open a project folder in Claude Pipeline Manager first.' })
+    const noStore = () => text({ error: 'No active project — open a project folder first.' })
 
     server.registerTool(
       'graph_get',
-      {
-        description:
-          'Get the current shared pipeline graph: all nodes (with statuses), all edges (source feeds target), and recent change events.'
-      },
+      { description: 'Current pipeline graph — nodes {id,type,status,path?,note?} and edges "src>tgt" (source feeds target).' },
       async () => {
         const store = this.getStore()
         if (!store) return noStore()
         const g = store.get()
+        // lean projection: drop label/description/tags/position/events and skip
+        // empty fields so graph_get stays cheap even on a large pipeline
         return text({
-          projectRoot: g.projectRoot,
-          updatedAt: g.updatedAt,
-          nodes: g.nodes.map(({ position: _position, ...n }) => n),
-          edges: g.edges,
-          recentEvents: g.events.slice(-10)
+          nodes: g.nodes.map((n) => {
+            const o: Record<string, string> = { id: n.id, type: n.type, status: n.status }
+            if (n.meta.path) o.path = n.meta.path
+            if (n.statusNote) o.note = n.statusNote
+            return o
+          }),
+          edges: g.edges.map((e) =>
+            e.kind === 'lineage' ? `${e.source}>${e.target}` : `${e.source}>${e.target}:${e.kind}`
+          )
         })
       }
     )
@@ -102,17 +105,17 @@ export class GraphMcpServer {
       'graph_upsert_nodes',
       {
         description:
-          'Create or update pipeline graph nodes (datasets/models/tables/sources). Use stable snake_case ids matching artifact names, e.g. "stg_orders". Include meta path when known.',
+          'Create/update nodes. Stable snake_case ids matching artifact names (e.g. stg_orders); set path to the source file.',
         inputSchema: {
           nodes: z
             .array(nodeInputSchema)
             .min(1)
             .describe(
-              'Nodes to create/update. Fields: id (required), label, type (' +
+              'id (req), type ' +
                 nodeTypeSchema.options.join('|') +
-                '), status (' +
+                ', status ' +
                 nodeStatusSchema.options.join('|') +
-                '), statusNote, path (source file), description, tags'
+                ', plus optional label, statusNote, path, description, tags'
             )
         }
       },
@@ -127,12 +130,12 @@ export class GraphMcpServer {
       'graph_upsert_edges',
       {
         description:
-          'Create or update lineage edges. An edge means: source feeds target. Missing endpoint nodes are auto-created as placeholders (fill them in with graph_upsert_nodes).',
+          'Create/update lineage edges (source feeds target). Missing endpoints auto-created as placeholders.',
         inputSchema: {
           edges: z
             .array(edgeInputSchema)
             .min(1)
-            .describe('Edges. Fields: source, target (node ids), kind (' + edgeKindSchema.options.join('|') + ')')
+            .describe('source, target (node ids), optional kind ' + edgeKindSchema.options.join('|'))
         }
       },
       async ({ edges }) => {
@@ -146,11 +149,11 @@ export class GraphMcpServer {
       'graph_set_status',
       {
         description:
-          'Set a node validation status. Use in_progress when starting a change, validated when verified done (include evidence in note), stale for downstream nodes your change may invalidate, breaking when something is incompatible (say exactly what breaks in note).',
+          'Set a node status: in_progress (starting a change), validated (done — evidence in note), stale (downstream a change may invalidate), breaking (note what breaks).',
         inputSchema: {
-          id: z.string().describe('Node id'),
+          id: z.string(),
           status: nodeStatusSchema,
-          note: z.string().optional().describe('Why / evidence')
+          note: z.string().optional().describe('why / evidence')
         }
       },
       async ({ id, status, note }) => {
@@ -163,11 +166,10 @@ export class GraphMcpServer {
     server.registerTool(
       'graph_remove',
       {
-        description:
-          'Remove nodes and/or edges from the graph. Only use when the underlying artifact was actually deleted. Removing a node also removes its edges.',
+        description: 'Remove nodes/edges (only when the artifact was deleted). Removing a node removes its edges.',
         inputSchema: {
           nodeIds: z.array(z.string()).optional(),
-          edgeIds: z.array(z.string()).optional().describe('Edge ids look like "source->target"')
+          edgeIds: z.array(z.string()).optional().describe('edge ids look like "source->target"')
         }
       },
       async ({ nodeIds, edgeIds }) => {

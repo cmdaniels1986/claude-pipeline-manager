@@ -29,6 +29,7 @@ export function TerminalPane({
   const removePane = useTerminalStore((s) => s.removePane)
   const addPane = useTerminalStore((s) => s.addPane)
   const usage = useTerminalStore((s) => (pane.termId ? s.usage[pane.termId] : undefined))
+  const billingReal = useTerminalStore((s) => s.billingReal)
   const [showLog, setShowLog] = useState(false)
 
   useEffect(() => {
@@ -170,7 +171,19 @@ export function TerminalPane({
           {usage.cacheReadTokens > 0 && (
             <span className="usage-cache">{fmtTokens(usage.cacheReadTokens)} cached</span>
           )}
-          {fmtCost(usage.costUsd) && <span className="usage-cost">≈ {fmtCost(usage.costUsd)}</span>}
+          {fmtCost(usage.costUsd) && (
+            <span
+              className="usage-cost"
+              title={
+                billingReal
+                  ? 'Actual per-token API cost'
+                  : 'Notional — your subscription is flat-rate, not billed per token'
+              }
+            >
+              {billingReal ? '' : '≈ '}
+              {fmtCost(usage.costUsd)}
+            </span>
+          )}
         </div>
       )}
       {pane.status === 'exited' && (

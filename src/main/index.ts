@@ -32,25 +32,11 @@ process.on('uncaughtException', (err) => {
   console.error('[main] uncaught exception:', err)
 })
 
-const GRAPH_PROTOCOL = `# Pipeline Graph Protocol
-
-This workspace has a LIVE shared pipeline graph. All Claude sessions collaborate on it
-through the "graph" MCP server (tools: graph_get, graph_upsert_nodes, graph_upsert_edges,
-graph_remove, graph_set_status). A human watches this graph in real time — keep it current.
-
-Rules:
-1. Before working on pipeline code, call graph_get to see the current graph.
-2. When you learn pipeline structure (datasets, models, tables, sources and their lineage)
-   from reading SQL/dbt/Python ETL code, record it immediately with graph_upsert_nodes and
-   graph_upsert_edges. Use stable snake_case ids matching artifact names (e.g. "stg_orders",
-   "fct_revenue"). An edge means: source feeds target. Set meta path to the source file.
-3. When you START changing a node's code: graph_set_status(id, "in_progress", why).
-4. When a change is DONE and verified (tests/build/queries pass): graph_set_status(id,
-   "validated", evidence). If your change may invalidate downstream nodes, set each affected
-   node to "stale". If something is incompatible/broken, set "breaking" with a note saying
-   exactly what breaks.
-5. Remove nodes/edges with graph_remove only when the artifact is deleted.
-6. Record only lineage you confirmed in code — never guess.
+const GRAPH_PROTOCOL = `# Pipeline Graph
+A live shared pipeline graph is visible to a human in real time; keep it current via the "graph" MCP tools. Don't over-report — a few tool calls at natural checkpoints, not after every step.
+- After reading pipeline code (SQL/dbt/Python ETL), record datasets + lineage: graph_upsert_nodes (stable snake_case ids matching artifact names; set path) and graph_upsert_edges (source feeds target). Record only lineage you confirmed in code.
+- graph_set_status: in_progress when you start changing a node; validated (with evidence) when done; stale for downstream nodes a change may invalidate; breaking (say what breaks) when incompatible.
+- graph_remove only when an artifact is deleted. Call graph_get (compact) if you need the current graph.
 `
 
 let claudeInfo: ClaudeInfo
@@ -221,6 +207,7 @@ function registerIpc(): void {
       claudeVersion: claudeInfo.version,
       mcpPort: mcpServer.port,
       hasAppendSystemPromptFile: claudeInfo.hasAppendSystemPromptFile,
+      apiKeyBilling: !!process.env.ANTHROPIC_API_KEY,
       warnings: startupWarnings
     }
   })
