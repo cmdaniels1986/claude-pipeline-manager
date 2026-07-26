@@ -9,6 +9,7 @@ import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
 import { detectClaude, type ClaudeInfo } from './pty/resolveClaude'
+import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
 import { broadcast, createMainWindow, getMainWindow, openGraphWindow } from './windows'
 
 if (!app.isPackaged) {
@@ -170,6 +171,27 @@ function registerIpc(): void {
       warnings: startupWarnings
     }
   })
+
+  ipcMain.handle('updates:apply', async () => {
+    const result = await applyUpdate(app.getAppPath())
+    if (result.ok) {
+      // give the renderer a beat to show the restarting state, then exit; the
+      // launcher .bat sees the restart marker and boots the updated app
+      setTimeout(() => app.exit(0), 800)
+    }
+    return result
+  })
+}
+
+function startUpdateChecks(): void {
+  const root = app.getAppPath()
+  if (!isGitInstall(root)) return
+  const check = async (): Promise<void> => {
+    const status = await checkForUpdates(root)
+    if (status && status.behind > 0) broadcast('updates:available', status)
+  }
+  void check()
+  setInterval(() => void check(), 30 * 60 * 1000)
 }
 
 app.whenReady().then(async () => {
@@ -201,6 +223,7 @@ app.whenReady().then(async () => {
 
   registerIpc()
   createMainWindow()
+  startUpdateChecks()
 })
 
 app.on('window-all-closed', () => {

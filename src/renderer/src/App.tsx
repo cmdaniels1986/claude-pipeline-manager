@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Diagnostics } from '../../shared/types'
+import type { Diagnostics, UpdateStatus } from '../../shared/types'
 import { GraphDock } from './components/GraphDock'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
 import { TerminalGrid } from './components/TerminalGrid'
@@ -15,12 +15,29 @@ export default function App(): React.JSX.Element {
   const [showGraph, setShowGraph] = useState(true)
   const [graphWidth, setGraphWidth] = useState(Math.round(window.innerWidth * 0.42))
   const [dragging, setDragging] = useState(false)
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [updateState, setUpdateState] = useState<'idle' | 'working' | 'restarting' | string>('idle')
 
   useEffect(() => {
     void window.api.getActiveProject().then(setProject)
     void window.api.getDiagnostics().then(setDiag)
-    return window.api.onProjectChanged(setProject)
+    const offProject = window.api.onProjectChanged(setProject)
+    const offUpdates = window.api.onUpdatesAvailable(setUpdate)
+    return () => {
+      offProject()
+      offUpdates()
+    }
   }, [])
+
+  const runUpdate = async (): Promise<void> => {
+    setUpdateState('working')
+    const result = await window.api.updatesApply()
+    if (result.ok) {
+      setUpdateState('restarting')
+    } else {
+      setUpdateState(result.error ?? 'Update failed')
+    }
+  }
 
   const pickProject = async (): Promise<void> => {
     const picked = await window.api.pickFolder()
@@ -83,6 +100,36 @@ export default function App(): React.JSX.Element {
           </span>
         )}
       </header>
+
+      {update && update.behind > 0 && (
+        <div className="update-banner">
+          {updateState === 'idle' && (
+            <>
+              <span>
+                ⬆ Update available — {update.behind} commit{update.behind > 1 ? 's' : ''} behind: “{update.latest}”
+              </span>
+              <button className="primary" onClick={() => void runUpdate()}>
+                Update &amp; restart
+              </button>
+              <button className="icon-button" onClick={() => setUpdate(null)} title="Dismiss">
+                ✕
+              </button>
+            </>
+          )}
+          {updateState === 'working' && <span>⬇ Downloading update and reinstalling dependencies…</span>}
+          {updateState === 'restarting' && (
+            <span>✅ Updated — restarting. (If the app doesn't come back, start it again from the launcher.)</span>
+          )}
+          {updateState !== 'idle' && updateState !== 'working' && updateState !== 'restarting' && (
+            <>
+              <span>⚠ {updateState}</span>
+              <button className="icon-button" onClick={() => setUpdate(null)} title="Dismiss">
+                ✕
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {showWarnings && diag && diag.warnings.length > 0 && (
         <div className="warn-banner">

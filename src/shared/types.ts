@@ -79,3 +79,10 @@ export interface GraphChangedPayload {
   graph: GraphState
   event: GraphEvent | null
 }
+
+export interface UpdateStatus {
+  /** commits behind origin/main; 0 = up to date */
+  behind: number
+  /** subject line of the newest remote commit */
+  latest: string
+}

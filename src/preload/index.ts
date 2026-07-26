@@ -5,7 +5,8 @@ import type {
   Diagnostics,
   GraphChangedPayload,
   GraphState,
-  TermInfo
+  TermInfo,
+  UpdateStatus
 } from '../shared/types'
 
 function subscribe<T>(channel: string): (cb: (payload: T) => void) => () => void {
@@ -50,7 +51,11 @@ const api = {
     ipcRenderer.invoke('prompt:inject', opts),
 
   // diagnostics
-  getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics')
+  getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics'),
+
+  // updates
+  updatesApply: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('updates:apply'),
+  onUpdatesAvailable: subscribe<UpdateStatus>('updates:available')
 }
 
 export type Api = typeof api

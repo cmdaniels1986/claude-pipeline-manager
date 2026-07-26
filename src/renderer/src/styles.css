@@ -94,6 +94,15 @@ select {
   padding: 6px 14px;
   color: #e3b341;
 }
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #0d2840;
+  border-bottom: 1px solid #1f6feb;
+  padding: 6px 14px;
+  color: #79c0ff;
+}
 .warn-banner p {
   margin: 4px 0;
 }
