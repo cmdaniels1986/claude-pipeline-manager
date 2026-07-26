@@ -20,6 +20,9 @@ export function GraphDock({ onClose }: { onClose: () => void }): React.JSX.Eleme
           </span>
         )}
         <span className="spacer" />
+        <button className="icon-button" onClick={() => void window.api.exportGraph()} title="Export a shareable HTML snapshot">
+          ⬇
+        </button>
         <button className="icon-button" onClick={popOut} title="Pop out into its own window">
           ⧉
         </button>

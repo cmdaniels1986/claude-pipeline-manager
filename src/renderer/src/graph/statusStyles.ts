@@ -8,9 +8,9 @@ export interface StatusStyle {
 }
 
 export const STATUS_STYLES: Record<NodeStatus, StatusStyle> = {
-  unknown: { border: '#3d444d', glow: 'transparent', dot: '#8b949e', label: 'unknown' },
-  in_progress: { border: '#d29922', glow: 'rgba(210,153,34,0.35)', dot: '#e3b341', label: 'in progress' },
-  validated: { border: '#2ea043', glow: 'rgba(46,160,67,0.30)', dot: '#3fb950', label: 'validated' },
-  stale: { border: '#db6d28', glow: 'rgba(219,109,40,0.35)', dot: '#f0883e', label: 'stale' },
-  breaking: { border: '#da3633', glow: 'rgba(218,54,51,0.45)', dot: '#f85149', label: 'BREAKING' }
+  unknown: { border: 'rgba(64,224,208,0.35)', glow: 'transparent', dot: '#6f938d', label: 'unknown' },
+  in_progress: { border: '#f5c451', glow: 'rgba(245,196,81,0.4)', dot: '#f5c451', label: 'in progress' },
+  validated: { border: '#2fe6a6', glow: 'rgba(47,230,166,0.4)', dot: '#2fe6a6', label: 'validated' },
+  stale: { border: '#ff9a3d', glow: 'rgba(255,154,61,0.4)', dot: '#ff9a3d', label: 'stale' },
+  breaking: { border: '#ff4d6d', glow: 'rgba(255,77,109,0.5)', dot: '#ff4d6d', label: 'BREAKING' }
 }

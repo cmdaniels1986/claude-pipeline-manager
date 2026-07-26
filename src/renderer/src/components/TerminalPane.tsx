@@ -7,10 +7,11 @@ import { attachTermData, getTermTailText, useTerminalStore, type PaneRec } from 
 import { fmtCost, fmtTokens } from './usageFormat'
 
 const TERM_THEME = {
-  background: '#0d1117',
-  foreground: '#e6edf3',
-  cursor: '#e6edf3',
-  selectionBackground: '#264f78'
+  background: '#050a0c',
+  foreground: '#cdeae4',
+  cursor: '#2fe6d6',
+  cursorAccent: '#050a0c',
+  selectionBackground: 'rgba(47,230,214,0.28)'
 }
 
 export function TerminalPane({

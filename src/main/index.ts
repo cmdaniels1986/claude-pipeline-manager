@@ -9,6 +9,7 @@ import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
+import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
 import { UsageTracker } from './usage/UsageTracker'
 import {
@@ -192,6 +193,20 @@ function registerIpc(): void {
   })
   ipcMain.handle('graph:openWindow', () => {
     openGraphWindow()
+  })
+  ipcMain.handle('graph:export', async () => {
+    if (!graphStore) return { ok: false, error: 'No active project.' }
+    const graph = graphStore.get()
+    if (!graph.nodes.length) return { ok: false, error: 'The graph is empty — nothing to export yet.' }
+    const name = (graph.projectRoot.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? 'pipeline') + '-pipeline.html'
+    const win = getMainWindow()
+    const result = win
+      ? await dialog.showSaveDialog(win, { defaultPath: name, filters: [{ name: 'HTML', extensions: ['html'] }] })
+      : await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: 'HTML', extensions: ['html'] }] })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    writeFileSync(result.filePath, exportGraphHtml(graph))
+    shell.showItemInFolder(result.filePath)
+    return { ok: true, path: result.filePath }
   })
 
   ipcMain.handle(

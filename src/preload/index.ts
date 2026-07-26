@@ -49,6 +49,8 @@ const api = {
   graphSetPositions: (positions: { id: string; position: { x: number; y: number } }[]): Promise<void> =>
     ipcRenderer.invoke('graph:setPositions', positions),
   openGraphWindow: (): Promise<void> => ipcRenderer.invoke('graph:openWindow'),
+  exportGraph: (): Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke('graph:export'),
   onGraphChanged: subscribe<GraphChangedPayload>('graph:changed'),
 
   // prompt injection
