@@ -16,3 +16,11 @@ export function fmtCost(usd: number | null): string | null {
 export function totalTokens(u: TermUsage): number {
   return u.inputTokens + u.cacheCreationTokens + u.cacheReadTokens + u.outputTokens
 }
+
+/** Compact tab badge: cost when known (the truest "how much has this burned"),
+ *  else a token total. Prefixed ≈ when the cost is notional (subscription). */
+export function usageBadge(u: TermUsage, billingReal: boolean): string {
+  const c = fmtCost(u.costUsd)
+  if (c) return billingReal ? c : `≈${c}`
+  return fmtTokens(totalTokens(u))
+}

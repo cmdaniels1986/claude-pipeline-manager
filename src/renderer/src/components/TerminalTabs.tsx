@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTerminalStore, type PaneRec } from '../stores/terminalStore'
 import { TerminalPane } from './TerminalPane'
-import { fmtTokens, totalTokens } from './usageFormat'
+import { usageBadge } from './usageFormat'
 
 const STATUS_DOT: Record<PaneRec['status'], string> = {
   starting: '#e3b341',
@@ -10,7 +10,7 @@ const STATUS_DOT: Record<PaneRec['status'], string> = {
 }
 
 export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): React.JSX.Element {
-  const { panes, activePaneId, usage, setActive, removePane, releasePane } = useTerminalStore()
+  const { panes, activePaneId, usage, billingReal, setActive, removePane, releasePane } = useTerminalStore()
   const [menu, setMenu] = useState<{ x: number; y: number; paneId: string } | null>(null)
 
   const popOut = (pane: PaneRec): void => {
@@ -67,8 +67,8 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
             <span className="tab-dot" style={{ background: STATUS_DOT[pane.status] }} />
             <span className="tab-label">{pane.label}</span>
             {pane.termId && usage[pane.termId] && (
-              <span className="tab-tokens" title="Tokens used this session">
-                {fmtTokens(totalTokens(usage[pane.termId]))}
+              <span className="tab-tokens" title="Session cost so far (≈ = notional; subscription is flat-rate)">
+                {usageBadge(usage[pane.termId], billingReal)}
               </span>
             )}
             <button

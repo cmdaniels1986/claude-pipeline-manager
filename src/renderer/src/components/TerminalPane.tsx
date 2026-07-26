@@ -166,12 +166,18 @@ export function TerminalPane({
       )}
       <div className="terminal-pane-body" ref={hostRef} />
       {usage && pane.status !== 'exited' && (
-        <div className="usage-strip" title={usage.model ? `model: ${usage.model}` : undefined}>
-          <span>↑ {fmtTokens(usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens)} in</span>
-          <span>↓ {fmtTokens(usage.outputTokens)} out</span>
+        <div
+          className="usage-strip"
+          title={
+            (usage.model ? `model: ${usage.model}\n` : '') +
+            'in = fresh full-price input · cached = cheap cache reads (~10× less) · out = generated'
+          }
+        >
+          <span>↑ {fmtTokens(usage.inputTokens + usage.cacheCreationTokens)} in</span>
           {usage.cacheReadTokens > 0 && (
-            <span className="usage-cache">{fmtTokens(usage.cacheReadTokens)} cached</span>
+            <span className="usage-cache">⟳ {fmtTokens(usage.cacheReadTokens)} cached</span>
           )}
+          <span>↓ {fmtTokens(usage.outputTokens)} out</span>
           {fmtCost(usage.costUsd) && (
             <span
               className="usage-cost"
