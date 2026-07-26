@@ -31,7 +31,8 @@ interface OtlpDataPoint {
 }
 interface OtlpMetric {
   name: string
-  sum?: { dataPoints?: OtlpDataPoint[] }
+  // aggregationTemporality: 1 = DELTA (Claude Code's default), 2 = CUMULATIVE
+  sum?: { dataPoints?: OtlpDataPoint[]; aggregationTemporality?: number }
   gauge?: { dataPoints?: OtlpDataPoint[] }
 }
 interface OtlpBody {
@@ -102,6 +103,9 @@ export class UsageTracker {
       for (const sm of rm.scopeMetrics ?? []) {
         for (const metric of sm.metrics ?? []) {
           const dps = metric.sum?.dataPoints ?? metric.gauge?.dataPoints ?? []
+          // Claude Code exports DELTA counters (each batch = usage since the last
+          // export), so accumulate. Guard for cumulative in case that ever changes.
+          const cumulative = metric.sum?.aggregationTemporality === 2
           for (const dp of dps) {
             const sid = this.attr(dp, 'session.id')
             if (!sid || !this.tracked.has(sid)) continue
@@ -110,14 +114,15 @@ export class UsageTracker {
             if (model) s.model = model
             const val = this.num(dp)
             if (metric.name === 'claude_code.cost.usage') {
-              s.costUsd = val
+              s.costUsd = cumulative ? val : (s.costUsd ?? 0) + val
               touched.add(sid)
             } else if (metric.name === 'claude_code.token.usage') {
               const type = this.attr(dp, 'type')
-              if (type === 'input') s.input = val
-              else if (type === 'output') s.output = val
-              else if (type === 'cacheRead') s.cacheRead = val
-              else if (type === 'cacheCreation') s.cacheCreation = val
+              const acc = (cur: number): number => (cumulative ? val : cur + val)
+              if (type === 'input') s.input = acc(s.input)
+              else if (type === 'output') s.output = acc(s.output)
+              else if (type === 'cacheRead') s.cacheRead = acc(s.cacheRead)
+              else if (type === 'cacheCreation') s.cacheCreation = acc(s.cacheCreation)
               touched.add(sid)
             }
           }
