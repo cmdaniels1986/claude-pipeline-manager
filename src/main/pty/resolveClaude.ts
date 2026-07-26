@@ -62,6 +62,29 @@ export function resolveClaudeExe(): string {
   )
 }
 
+export interface LoginResult {
+  ok: boolean
+  detail: string
+}
+
+/** Probes auth by asking the CLI to answer a trivial prompt in print mode.
+ *  A logged-in CLI replies; otherwise it errors (auth / login / unknown flag). */
+export async function checkLogin(exePath: string): Promise<LoginResult> {
+  try {
+    const { stdout } = await execFileP(exePath, ['-p', 'Reply with the single word: ready'], {
+      timeout: 60000,
+      maxBuffer: 1024 * 1024
+    })
+    const out = stdout.trim()
+    if (/ready/i.test(out)) return { ok: true, detail: 'Logged in — Claude responded.' }
+    return { ok: true, detail: out ? `Responded: ${out.slice(0, 200)}` : 'Responded (empty output).' }
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string }
+    const detail = (e.stderr || e.stdout || e.message || String(err)).toString().trim().slice(0, 600)
+    return { ok: false, detail: detail || 'Claude exited with an error and no output.' }
+  }
+}
+
 export async function detectClaude(): Promise<ClaudeInfo> {
   const exePath = resolveClaudeExe()
   const [versionOut, helpOut] = await Promise.all([

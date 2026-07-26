@@ -2,8 +2,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { useEffect, useRef } from 'react'
-import { attachTermData, useTerminalStore, type PaneRec } from '../stores/terminalStore'
+import { useEffect, useRef, useState } from 'react'
+import { attachTermData, getTermTailText, useTerminalStore, type PaneRec } from '../stores/terminalStore'
 
 const TERM_THEME = {
   background: '#0d1117',
@@ -26,6 +26,8 @@ export function TerminalPane({
   const termRef = useRef<Terminal | null>(null)
   const setLive = useTerminalStore((s) => s.setLive)
   const removePane = useTerminalStore((s) => s.removePane)
+  const addPane = useTerminalStore((s) => s.addPane)
+  const [showLog, setShowLog] = useState(false)
 
   useEffect(() => {
     if (!hostRef.current || startedRef.current) return
@@ -125,6 +127,22 @@ export function TerminalPane({
     removePane(pane.paneId)
   }
 
+  const restart = (): void => {
+    addPane({
+      cwd: pane.cwd,
+      agentName: pane.agentName,
+      model: pane.model,
+      color: pane.color,
+      dangerous: pane.dangerous
+    })
+    removePane(pane.paneId)
+  }
+
+  // a session that dies within a few seconds of launch almost certainly failed to
+  // start (not logged in, bad flag, wrong CLI version) rather than exiting normally
+  const exitedEarly = pane.status === 'exited' && pane.exitCode !== 0
+  const crashLog = exitedEarly && pane.termId ? getTermTailText(pane.termId) : ''
+
   return (
     <div className="terminal-pane">
       {showHeader && (
@@ -144,11 +162,29 @@ export function TerminalPane({
       )}
       <div className="terminal-pane-body" ref={hostRef} />
       {pane.status === 'exited' && (
-        <div className="terminal-pane-overlay">
-          <div>
-            <p>Session ended (exit code {pane.exitCode ?? '?'})</p>
-            <button onClick={close}>Close pane</button>
+        <div className="terminal-pane-exitbar">
+          <div className="exitbar-row">
+            <span className={exitedEarly ? 'exit-bad' : 'exit-ok'}>
+              {exitedEarly
+                ? `⚠ Session failed to start (exit code ${pane.exitCode})`
+                : `Session ended (exit code ${pane.exitCode ?? 0})`}
+            </span>
+            {exitedEarly && crashLog && (
+              <button className="link-button" onClick={() => setShowLog((v) => !v)}>
+                {showLog ? 'Hide output' : 'Show output'}
+              </button>
+            )}
+            <span className="spacer" />
+            <button onClick={restart}>↻ Restart</button>
+            <button onClick={close}>Close</button>
           </div>
+          {exitedEarly && (
+            <div className="exitbar-hint">
+              Common causes: Claude isn’t logged in on this machine (run <code>claude</code> in a
+              terminal and log in), or a different CLI version. Use “Check login” in the toolbar to test.
+            </div>
+          )}
+          {showLog && crashLog && <pre className="exitbar-log">{crashLog}</pre>}
         </div>
       )}
     </div>

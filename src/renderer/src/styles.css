@@ -355,14 +355,84 @@ button.danger:hover {
 .terminal-pane-body .xterm {
   height: 100%;
 }
-.terminal-pane-overlay {
+/* exit bar sits at the bottom so Claude's final output stays readable above it */
+.terminal-pane-exitbar {
   position: absolute;
-  inset: 0;
-  background: rgba(13, 17, 23, 0.82);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #161b22;
+  border-top: 1px solid #3d444d;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 55%;
+}
+.exitbar-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
+  gap: 10px;
+}
+.exit-bad {
+  color: #f85149;
+  font-weight: 600;
+}
+.exit-ok {
+  color: #8b949e;
+}
+.exitbar-hint {
+  color: #8b949e;
+  font-size: 11px;
+}
+.exitbar-hint code {
+  background: #0d1117;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.exitbar-log {
+  margin: 0;
+  padding: 8px;
+  background: #0d1117;
+  border: 1px solid #3d444d;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #e6edf3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 180px;
+}
+.link-button {
+  border: none;
+  background: transparent;
+  color: #58a6ff;
+  padding: 0;
+  text-decoration: underline;
+}
+.login-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+}
+.login-banner.ok {
+  background: #0f2417;
+  border-bottom: 1px solid #2ea043;
+  color: #56d364;
+}
+.login-banner.bad {
+  background: #2d0f0f;
+  border-bottom: 1px solid #da3633;
+  color: #ffa198;
+}
+.login-detail {
+  font-size: 11px;
+  opacity: 0.85;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-state {

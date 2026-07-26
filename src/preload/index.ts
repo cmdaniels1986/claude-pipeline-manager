@@ -55,6 +55,7 @@ const api = {
 
   // diagnostics
   getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics'),
+  checkLogin: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('app:checkLogin'),
 
   // updates
   updatesApply: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('updates:apply'),

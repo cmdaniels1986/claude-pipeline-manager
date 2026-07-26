@@ -110,6 +110,30 @@ const handlers = new Map<string, (data: string) => void>()
 const buffers = new Map<string, string[]>()
 const debugTails = new Map<string, string>()
 
+const ESC = String.fromCharCode(27)
+const BEL = String.fromCharCode(7)
+// OSC: ESC ] ... (BEL or ESC \ terminator)
+const OSC = new RegExp(ESC + '\\][^' + BEL + ESC + ']*(?:' + BEL + '|' + ESC + '\\\\)', 'g')
+// CSI: ESC [ , param bytes 0-9:;<=>? , intermediate bytes space-/ , final byte @-~
+const CSI = new RegExp(ESC + '\\[[0-9:;<=>?]*[ -/]*[@-~]', 'g')
+// other ESC sequences (charset selection, single-char, etc.)
+const ESC_OTHER = new RegExp(ESC + '[ -/]*[0-~]', 'g')
+// leftover control chars except tab and newline
+const CTRL = /[\x00-\x08\x0b-\x1f\x7f]/g
+
+/** Raw terminal output with ANSI/control noise stripped, for showing crash reasons. */
+export function getTermTailText(termId: string, chars = 2500): string {
+  const raw = debugTails.get(termId) ?? ''
+  const clean = raw
+    .replace(OSC, '')
+    .replace(CSI, '')
+    .replace(ESC_OTHER, '')
+    .replace(CTRL, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+  return clean.trim().slice(-chars)
+}
+
 if (typeof window !== 'undefined' && window.api) {
   window.api.onTermData(({ termId, data }) => {
     debugTails.set(termId, ((debugTails.get(termId) ?? '') + data).slice(-30000))

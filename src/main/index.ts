@@ -8,7 +8,7 @@ import { GraphStore } from './graph/GraphStore'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
-import { detectClaude, type ClaudeInfo } from './pty/resolveClaude'
+import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
 import {
   broadcast,
@@ -220,6 +220,8 @@ function registerIpc(): void {
       warnings: startupWarnings
     }
   })
+
+  ipcMain.handle('app:checkLogin', () => checkLogin(claudeInfo.exePath))
 
   ipcMain.handle('updates:apply', async () => {
     const result = await applyUpdate(app.getAppPath())

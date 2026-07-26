@@ -17,6 +17,7 @@ export default function App(): React.JSX.Element {
   const [dragging, setDragging] = useState(false)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [updateState, setUpdateState] = useState<'idle' | 'working' | 'restarting' | string>('idle')
+  const [login, setLogin] = useState<{ checking: boolean; ok?: boolean; detail?: string } | null>(null)
 
   useEffect(() => {
     void window.api.getActiveProject().then(setProject)
@@ -28,6 +29,12 @@ export default function App(): React.JSX.Element {
       offUpdates()
     }
   }, [])
+
+  const runLoginCheck = async (): Promise<void> => {
+    setLogin({ checking: true })
+    const result = await window.api.checkLogin()
+    setLogin({ checking: false, ok: result.ok, detail: result.detail })
+  }
 
   const runUpdate = async (): Promise<void> => {
     setUpdateState('working')
@@ -88,6 +95,13 @@ export default function App(): React.JSX.Element {
         >
           🗺 Pipeline Graph
         </button>
+        <button
+          onClick={() => void runLoginCheck()}
+          disabled={login?.checking}
+          title="Test that Claude is logged in on this machine"
+        >
+          🔑 {login?.checking ? 'Checking…' : 'Check login'}
+        </button>
         <span className="spacer" />
         {diag && (
           <span className="diag" title={`Claude ${diag.claudeVersion} · graph MCP on :${diag.mcpPort}`}>
@@ -128,6 +142,22 @@ export default function App(): React.JSX.Element {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {login && !login.checking && (
+        <div className={login.ok ? 'login-banner ok' : 'login-banner bad'}>
+          <span>
+            {login.ok ? '✅ ' : '⚠ '}
+            {login.ok
+              ? 'Claude is logged in on this machine.'
+              : "Claude is NOT responding on this machine — likely not logged in. Open a terminal, run `claude`, log in, then relaunch."}
+          </span>
+          {login.detail && <code className="login-detail">{login.detail}</code>}
+          <span className="spacer" />
+          <button className="icon-button" onClick={() => setLogin(null)} title="Dismiss">
+            ✕
+          </button>
         </div>
       )}
 
