@@ -78,6 +78,7 @@ export function TerminalPane({
           agentName: pane.agentName,
           model: pane.model,
           color: pane.color,
+          dangerous: pane.dangerous,
           cols: term.cols,
           rows: term.rows
         })

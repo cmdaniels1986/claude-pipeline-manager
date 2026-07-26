@@ -8,6 +8,7 @@ export interface PaneRec {
   agentName?: string
   model?: string
   color?: string
+  dangerous?: boolean
   termId?: string
   label: string
   status: 'starting' | 'live' | 'exited'
@@ -17,7 +18,13 @@ export interface PaneRec {
 interface TerminalStore {
   panes: PaneRec[]
   activePaneId: string | null
-  addPane: (opts: { cwd: string; agentName?: string; model?: string; color?: string }) => void
+  addPane: (opts: {
+    cwd: string
+    agentName?: string
+    model?: string
+    color?: string
+    dangerous?: boolean
+  }) => void
   adoptPane: (opts: { termId: string; label: string; cwd: string; color?: string }) => void
   setActive: (paneId: string) => void
   setLive: (paneId: string, termId: string, label: string) => void
@@ -52,6 +59,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
             agentName: opts.agentName,
             model: opts.model,
             color: opts.color,
+            dangerous: opts.dangerous,
             label: opts.agentName ?? 'claude',
             status: 'starting' as const
           }

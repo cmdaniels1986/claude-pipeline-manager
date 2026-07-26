@@ -20,6 +20,7 @@ export function NewTerminalDialog({
   const [newAgentName, setNewAgentName] = useState('')
   const [model, setModel] = useState('')
   const [color, setColor] = useState<string>(AGENT_COLORS[paneCount % AGENT_COLORS.length])
+  const [dangerous, setDangerous] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refreshAgents = (): void => {
@@ -58,7 +59,8 @@ export function NewTerminalDialog({
       cwd: cwd.trim(),
       agentName: agentChoice !== NO_AGENT && agentChoice !== NEW_AGENT ? agentChoice : undefined,
       model: model.trim() || undefined,
-      color
+      color,
+      dangerous
     })
     onClose()
   }
@@ -126,12 +128,23 @@ export function NewTerminalDialog({
           ))}
         </div>
 
+        <label className={`danger-check${dangerous ? ' armed' : ''}`}>
+          <input type="checkbox" checked={dangerous} onChange={(e) => setDangerous(e.target.checked)} />
+          <span>
+            💀 Boot Dangerously!
+            <span className="danger-sub">
+              Skips all permission prompts (--dangerously-skip-permissions). This session can edit
+              files and run commands with no confirmation — only for folders you trust.
+            </span>
+          </span>
+        </label>
+
         {error && <p className="modal-note">{error}</p>}
 
         <div className="modal-actions">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={() => void launch()}>
-            Launch
+          <button className={dangerous ? 'danger' : 'primary'} onClick={() => void launch()}>
+            {dangerous ? '💀 Boot Dangerously' : 'Launch'}
           </button>
         </div>
       </div>

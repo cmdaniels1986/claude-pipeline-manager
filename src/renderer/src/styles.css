@@ -281,6 +281,41 @@ button.toggled {
   border-color: #e6edf3;
   transform: scale(1.12);
 }
+
+.danger-check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #3d444d;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.danger-check input {
+  width: auto;
+  margin-top: 2px;
+}
+.danger-check.armed {
+  border-color: #f85149;
+  background: #2d0f0f;
+}
+.danger-sub {
+  display: block;
+  color: #8b949e;
+  font-size: 11px;
+  margin-top: 3px;
+}
+.danger-check.armed .danger-sub {
+  color: #ffa198;
+}
+button.danger {
+  background: #b62324;
+  border-color: #f85149;
+}
+button.danger:hover {
+  background: #da3633;
+}
 .terminal-pane {
   display: flex;
   flex-direction: column;

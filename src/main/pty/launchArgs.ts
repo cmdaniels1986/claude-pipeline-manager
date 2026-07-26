@@ -1,6 +1,7 @@
 export interface LaunchArgOptions {
   agentName?: string
   model?: string
+  dangerous?: boolean
   mcpConfigPath: string
   protocolPath: string
   /** settings JSON file with a SessionStart hook that types the protocol — used when
@@ -18,5 +19,6 @@ export function buildLaunchArgs(o: LaunchArgOptions): string[] {
   }
   if (o.agentName) args.push('--agent', o.agentName)
   if (o.model) args.push('--model', o.model)
+  if (o.dangerous) args.push('--dangerously-skip-permissions')
   return args
 }

@@ -65,6 +65,8 @@ export interface CreateTermOptions {
   agentName?: string
   model?: string
   color?: string
+  /** launch with --dangerously-skip-permissions (no permission prompts) */
+  dangerous?: boolean
   cols: number
   rows: number
 }

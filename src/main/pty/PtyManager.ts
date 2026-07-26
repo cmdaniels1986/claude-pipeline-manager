@@ -34,6 +34,7 @@ export class PtyManager {
     const args = buildLaunchArgs({
       agentName: opts.agentName,
       model: opts.model,
+      dangerous: opts.dangerous,
       mcpConfigPath,
       protocolPath: this.deps.protocolPath,
       settingsFallbackPath: this.deps.settingsFallbackPath,
