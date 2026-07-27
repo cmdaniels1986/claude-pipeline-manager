@@ -18,6 +18,8 @@ export default function App(): React.JSX.Element {
   const [dragging, setDragging] = useState(false)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [updateState, setUpdateState] = useState<'idle' | 'working' | 'restarting' | string>('idle')
+  const [updateNote, setUpdateNote] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
   const [login, setLogin] = useState<{ checking: boolean; ok?: boolean; detail?: string } | null>(null)
 
   useEffect(() => {
@@ -44,6 +46,20 @@ export default function App(): React.JSX.Element {
     setLogin({ checking: true })
     const result = await window.api.checkLogin()
     setLogin({ checking: false, ok: result.ok, detail: result.detail })
+  }
+
+  const checkUpdates = async (): Promise<void> => {
+    setChecking(true)
+    setUpdateNote(null)
+    const r = await window.api.updatesCheck()
+    setChecking(false)
+    if (r.ok && r.behind) {
+      setUpdate({ behind: r.behind, latest: r.latest ?? '' })
+    } else if (r.ok) {
+      setUpdateNote('✓ Up to date — you’re on the latest version.')
+    } else {
+      setUpdateNote('⚠ Couldn’t check for updates: ' + (r.reason ?? 'unknown error'))
+    }
   }
 
   const runUpdate = async (): Promise<void> => {
@@ -112,6 +128,9 @@ export default function App(): React.JSX.Element {
         >
           🔑 {login?.checking ? 'Checking…' : 'Check login'}
         </button>
+        <button onClick={() => void checkUpdates()} disabled={checking} title="Check GitHub for a newer version now">
+          ⟳ {checking ? 'Checking…' : 'Updates'}
+        </button>
         <span className="spacer" />
         {diag && (
           <span className="diag" title={`Claude ${diag.claudeVersion} · graph MCP on :${diag.mcpPort}`}>
@@ -152,6 +171,16 @@ export default function App(): React.JSX.Element {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {updateNote && (
+        <div className={updateNote.startsWith('✓') ? 'login-banner ok' : 'login-banner bad'}>
+          <span>{updateNote}</span>
+          <span className="spacer" />
+          <button className="icon-button" onClick={() => setUpdateNote(null)} title="Dismiss">
+            ✕
+          </button>
         </div>
       )}
 

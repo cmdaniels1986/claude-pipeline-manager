@@ -10,7 +10,7 @@ import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { PtyManager } from './pty/PtyManager'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { exportGraphHtml } from './export/exportGraphHtml'
-import { applyUpdate, checkForUpdates, isGitInstall } from './updates/UpdateChecker'
+import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
 import { UsageTracker } from './usage/UsageTracker'
 import {
   broadcast,
@@ -253,6 +253,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('app:checkLogin', () => checkLogin(claudeInfo.exePath))
+
+  ipcMain.handle('updates:check', () => checkForUpdatesDetailed(app.getAppPath()))
 
   ipcMain.handle('updates:apply', async () => {
     const result = await applyUpdate(app.getAppPath())

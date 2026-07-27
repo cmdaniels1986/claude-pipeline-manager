@@ -105,6 +105,14 @@ export interface UpdateStatus {
   latest: string
 }
 
+/** result of a manual update check — surfaces why a check couldn't run */
+export interface UpdateCheckResult {
+  ok: boolean
+  behind?: number
+  latest?: string
+  reason?: string
+}
+
 export interface TermUsage {
   termId: string
   model?: string
