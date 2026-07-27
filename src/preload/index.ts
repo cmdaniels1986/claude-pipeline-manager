@@ -11,6 +11,7 @@ import type {
   TaskStatus,
   TasksChangedPayload,
   TasksState,
+  TasksWarning,
   TermInfo,
   TermUsage,
   UpdateCheckResult,
@@ -54,7 +55,14 @@ const api = {
   projectSwitch: (id: string): Promise<ProjectInfo | null> => ipcRenderer.invoke('project:switch', id),
   projectRename: (id: string, name: string): Promise<void> => ipcRenderer.invoke('project:rename', { id, name }),
   projectRemove: (id: string): Promise<ProjectsState> => ipcRenderer.invoke('project:remove', id),
+  projectPickSharedFolder: (): Promise<{ canceled: true } | { canceled: false; path: string }> =>
+    ipcRenderer.invoke('project:pickSharedFolder'),
+  projectSetShared: (id: string, folderPath: string | null): Promise<ProjectInfo | null> =>
+    ipcRenderer.invoke('project:setShared', { id, folderPath }),
+  projectRevealShared: (folderPath: string): Promise<void> =>
+    ipcRenderer.invoke('project:revealShared', folderPath),
   onProjectsChanged: subscribe<ProjectsState>('projects:changed'),
+  onTasksWarning: subscribe<TasksWarning>('tasks:warning'),
 
   // graph
   graphGet: (): Promise<GraphState | null> => ipcRenderer.invoke('graph:get'),

@@ -8,7 +8,8 @@ export const taskSchema = z.object({
   status: taskStatusSchema,
   note: z.string().optional(),
   createdAt: z.string(),
-  updatedAt: z.string()
+  updatedAt: z.string(),
+  updatedBy: z.string().optional()
 })
 
 export const goalSchema = z.object({
@@ -17,14 +18,21 @@ export const goalSchema = z.object({
   note: z.string().optional(),
   tasks: z.array(taskSchema),
   createdAt: z.string(),
-  updatedAt: z.string()
+  updatedAt: z.string(),
+  updatedBy: z.string().optional()
 })
 
 export const taskEventSchema = z.object({
   ts: z.string(),
   termId: z.string().nullable(),
   tool: z.string(),
-  summary: z.string()
+  summary: z.string(),
+  by: z.string().optional()
+})
+
+export const tombstoneSchema = z.object({
+  id: z.string().min(1),
+  ts: z.string()
 })
 
 export const tasksStateSchema = z.object({
@@ -32,7 +40,8 @@ export const tasksStateSchema = z.object({
   projectRoot: z.string(),
   updatedAt: z.string(),
   goals: z.array(goalSchema),
-  events: z.array(taskEventSchema)
+  events: z.array(taskEventSchema),
+  removed: z.array(tombstoneSchema).optional().default([])
 })
 
 /** A task from an MCP call: a bare title string, or an object with an optional note. */

@@ -1,8 +1,8 @@
 import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
+import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CreateTermOptions, Diagnostics, TaskStatus } from '../shared/types'
+import type { CreateTermOptions, Diagnostics, ProjectInfo, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
@@ -78,16 +78,37 @@ function userDataPath(...parts: string[]): string {
   return join(app.getPath('userData'), ...parts)
 }
 
-function setActiveProject(root: string): void {
-  if (activeProject === root) return
+/** display name stamped on this machine's task edits (shows on a shared list) */
+function taskAuthorName(): string {
+  try {
+    return userInfo().username || 'me'
+  } catch {
+    return 'me'
+  }
+}
+
+/** Build a TaskStore for a project (shared cloud file or local), wired to
+ *  broadcast changes + conflict warnings to the renderer. */
+function makeTaskStore(info: ProjectInfo): TaskStore {
+  const store = new TaskStore(info.root, {
+    filePath: projectManager.tasksFilePathFor(info),
+    author: taskAuthorName(),
+    shared: !!info.sharedTasksPath
+  })
+  store.on('change', (payload) => broadcast('tasks:changed', payload))
+  store.on('warning', (w) => broadcast('tasks:warning', w))
+  return store
+}
+
+function setActiveProject(info: ProjectInfo): void {
+  if (activeProject === info.root) return
   graphStore?.dispose()
   taskStore?.dispose()
-  activeProject = root
-  graphStore = new GraphStore(root)
+  activeProject = info.root
+  graphStore = new GraphStore(info.root)
   graphStore.on('change', (payload) => broadcast('graph:changed', payload))
-  taskStore = new TaskStore(root)
-  taskStore.on('change', (payload) => broadcast('tasks:changed', payload))
-  agentDiscovery.setProjectRoot(root)
+  taskStore = makeTaskStore(info)
+  agentDiscovery.setProjectRoot(info.root)
   broadcast('graph:changed', { graph: graphStore.get(), event: null })
   broadcast('tasks:changed', { tasks: taskStore.get(), event: null })
 }
@@ -223,14 +244,14 @@ function registerIpc(): void {
   ipcMain.handle('project:getActive', () => projectManager.getActive())
   ipcMain.handle('project:create', (_e, name: string) => {
     const info = projectManager.create(name)
-    setActiveProject(info.root)
+    setActiveProject(info)
     broadcastProjects()
     return info
   })
   ipcMain.handle('project:switch', (_e, id: string) => {
     const info = projectManager.setActive(id)
     if (info) {
-      setActiveProject(info.root)
+      setActiveProject(info)
       broadcastProjects()
     }
     return info
@@ -243,9 +264,52 @@ function registerIpc(): void {
     projectManager.remove(id)
     // keep an active project alive at all times
     const active = projectManager.ensureDefault()
-    setActiveProject(active.root)
+    setActiveProject(active)
     broadcastProjects()
     return { projects: projectManager.list(), activeId: projectManager.activeId() }
+  })
+
+  // ---- shared task list (cloud-synced folder) ------------------------------
+  ipcMain.handle('project:pickSharedFolder', async () => {
+    const win = getMainWindow()
+    const opts = {
+      title: 'Choose a synced folder to share tasks through',
+      properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>
+    }
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (result.canceled || !result.filePaths[0]) return { canceled: true as const }
+    return { canceled: false as const, path: result.filePaths[0] }
+  })
+  ipcMain.handle(
+    'project:setShared',
+    (_e, { id, folderPath }: { id: string; folderPath: string | null }) => {
+      const before = projectManager.list().find((p) => p.id === id)
+      if (!before) return null
+      // grab the project's current tasks so we can carry them to the new location
+      const prevState = TaskStore.readFile(projectManager.tasksFilePathFor(before), before.root)
+      const info = projectManager.setSharedTasksPath(id, folderPath)
+      if (!info) return null
+      if (projectManager.activeId() === id) {
+        taskStore?.dispose()
+        taskStore = makeTaskStore(info)
+        taskStore.importState(prevState) // migrate existing tasks into the new store
+        broadcast('tasks:changed', { tasks: taskStore.get(), event: null })
+      } else {
+        // migrate a non-active project without disturbing the live view
+        const tmp = new TaskStore(info.root, {
+          filePath: projectManager.tasksFilePathFor(info),
+          author: taskAuthorName(),
+          shared: !!info.sharedTasksPath
+        })
+        tmp.importState(prevState)
+        tmp.dispose()
+      }
+      broadcastProjects()
+      return info
+    }
+  )
+  ipcMain.handle('project:revealShared', (_e, folderPath: string) => {
+    if (folderPath) void shell.openPath(folderPath)
   })
 
   ipcMain.handle('graph:get', () => graphStore?.get() ?? null)
@@ -405,7 +469,7 @@ app.whenReady().then(async () => {
   // app-managed project library — always open one so the graph/tasks have a home
   projectManager = new ProjectManager(app.getPath('userData'))
   const active = projectManager.ensureDefault()
-  setActiveProject(active.root)
+  setActiveProject(active)
 
   registerIpc()
   createMainWindow()

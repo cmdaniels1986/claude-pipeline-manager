@@ -50,6 +50,10 @@ export interface ProjectInfo {
   root: string
   createdAt: string
   lastOpenedAt: string
+  /** when set, the goals & tasks live in <sharedTasksPath>/tasks.json in a
+   *  cloud-synced folder (OneDrive/Google Drive/Dropbox) shared with a coworker,
+   *  instead of the local app-data root. */
+  sharedTasksPath?: string
 }
 
 export interface ProjectsState {
@@ -80,6 +84,8 @@ export interface Task {
   note?: string
   createdAt: string
   updatedAt: string
+  /** who last touched this task — a coworker's name or "agent" (shared lists) */
+  updatedBy?: string
 }
 
 export interface Goal {
@@ -89,6 +95,7 @@ export interface Goal {
   tasks: Task[]
   createdAt: string
   updatedAt: string
+  updatedBy?: string
 }
 
 export interface TaskEvent {
@@ -97,6 +104,15 @@ export interface TaskEvent {
   termId: string | null
   tool: string
   summary: string
+  /** display name of whoever made the change (this machine's user, on a shared list) */
+  by?: string
+}
+
+/** A deleted goal/task id, kept so a removal propagates across a shared file
+ *  instead of the item resurrecting on the next merge. */
+export interface TaskTombstone {
+  id: string
+  ts: string
 }
 
 export interface TasksState {
@@ -105,11 +121,18 @@ export interface TasksState {
   updatedAt: string
   goals: Goal[]
   events: TaskEvent[]
+  removed?: TaskTombstone[]
 }
 
 export interface TasksChangedPayload {
   tasks: TasksState
   event: TaskEvent | null
+}
+
+/** surfaced when a cloud drive creates a "conflicted copy" beside the shared file */
+export interface TasksWarning {
+  projectRoot: string
+  message: string
 }
 
 export interface AgentInfo {

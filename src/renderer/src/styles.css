@@ -955,6 +955,30 @@ button.danger:hover {
   text-overflow: ellipsis;
   font-family: 'Cascadia Mono', Consolas, monospace;
 }
+.activity-by {
+  color: var(--accent);
+}
+/* who is working on a task, on a shared list */
+.task-who {
+  font-size: 10px;
+  color: var(--warn);
+  border: 1px solid rgba(245, 196, 81, 0.4);
+  border-radius: 10px;
+  padding: 0 6px;
+  margin-left: 6px;
+  white-space: nowrap;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+/* "shared" chip on a project in the switcher */
+.shared-badge {
+  font-size: 9px;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 5px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
 .relayout-button {
   position: absolute;
   top: 12px;

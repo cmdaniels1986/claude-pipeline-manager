@@ -25,6 +25,7 @@ export default function App(): React.JSX.Element {
   const [updateNote, setUpdateNote] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [login, setLogin] = useState<{ checking: boolean; ok?: boolean; detail?: string } | null>(null)
+  const [taskWarning, setTaskWarning] = useState<string | null>(null)
   const usage = useTerminalStore((s) => s.usage)
   const billingReal = useTerminalStore((s) => s.billingReal)
   const totals = sessionTotals(usage)
@@ -49,9 +50,11 @@ export default function App(): React.JSX.Element {
       setActiveId(activeId)
     })
     const offUpdates = window.api.onUpdatesAvailable(setUpdate)
+    const offTaskWarn = window.api.onTasksWarning((w) => setTaskWarning(w.message))
     return () => {
       offProjects()
       offUpdates()
+      offTaskWarn()
     }
   }, [])
 
@@ -214,6 +217,16 @@ export default function App(): React.JSX.Element {
           {login.detail && <code className="login-detail">{login.detail}</code>}
           <span className="spacer" />
           <button className="icon-button" onClick={() => setLogin(null)} title="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {taskWarning && (
+        <div className="login-banner bad">
+          <span>⚠ {taskWarning}</span>
+          <span className="spacer" />
+          <button className="icon-button" onClick={() => setTaskWarning(null)} title="Dismiss">
             ✕
           </button>
         </div>

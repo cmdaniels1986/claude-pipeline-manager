@@ -123,6 +123,30 @@ export class ProjectManager {
     return p
   }
 
+  /** Point a project's goals & tasks at a shared, cloud-synced folder (or pass
+   *  null to move them back into local app-data). Does not itself migrate the
+   *  existing tasks — the caller re-inits the store and imports them. */
+  setSharedTasksPath(id: string, folderPath: string | null): ProjectInfo | null {
+    const p = this.index.projects.find((x) => x.id === id)
+    if (!p) return null
+    if (folderPath && folderPath.trim()) {
+      mkdirSync(folderPath, { recursive: true })
+      p.sharedTasksPath = folderPath
+    } else {
+      delete p.sharedTasksPath
+    }
+    this.save()
+    return p
+  }
+
+  /** Absolute path to a project's tasks.json — the shared folder when shared,
+   *  otherwise inside the project's local app-data folder. */
+  tasksFilePathFor(info: ProjectInfo): string {
+    return info.sharedTasksPath
+      ? join(info.sharedTasksPath, 'tasks.json')
+      : join(info.root, '.claude-manager', 'tasks.json')
+  }
+
   /** Guarantees there is always an active project (creates a default on first run). */
   ensureDefault(): ProjectInfo {
     let active = this.getActive()

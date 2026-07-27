@@ -38,6 +38,29 @@ export function ProjectSwitcher({
     }
   }
 
+  const shareTasks = async (p: ProjectInfo): Promise<void> => {
+    const res = await window.api.projectPickSharedFolder()
+    if (res.canceled) return
+    await window.api.projectSetShared(p.id, res.path)
+    window.alert(
+      `“${p.name}” tasks now live in:\n${res.path}\n\nHave your coworker create a project and share it to the SAME synced folder — you'll both see the same list.`
+    )
+  }
+
+  const stopSharing = async (p: ProjectInfo): Promise<void> => {
+    if (
+      window.confirm(
+        `Stop sharing “${p.name}” tasks?\nThe current tasks are copied back into this app; the file in the shared folder stays put.`
+      )
+    ) {
+      await window.api.projectSetShared(p.id, null)
+    }
+  }
+
+  const revealShared = (p: ProjectInfo): void => {
+    if (p.sharedTasksPath) void window.api.projectRevealShared(p.sharedTasksPath)
+  }
+
   return (
     <div className="project-switcher">
       <button className="project-button" onClick={() => setOpen((v) => !v)} title="Switch or create a project">
@@ -73,6 +96,37 @@ export function ProjectSwitcher({
                     >
                       {p.id === activeId ? '● ' : '○ '}
                       {p.name}
+                      {p.sharedTasksPath && (
+                        <span className="shared-badge" title={`Shared tasks: ${p.sharedTasksPath}`}>
+                          🔗 shared
+                        </span>
+                      )}
+                    </button>
+                  )}
+                  {p.sharedTasksPath ? (
+                    <>
+                      <button
+                        className="icon-button"
+                        title={`Shared tasks folder:\n${p.sharedTasksPath}\nClick to open`}
+                        onClick={() => revealShared(p)}
+                      >
+                        🔗
+                      </button>
+                      <button
+                        className="icon-button"
+                        title="Stop sharing (copy tasks back to local)"
+                        onClick={() => void stopSharing(p)}
+                      >
+                        ⊘
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="icon-button"
+                      title="Share these tasks via a synced cloud folder (OneDrive / Google Drive / Dropbox)"
+                      onClick={() => void shareTasks(p)}
+                    >
+                      🔗
                     </button>
                   )}
                   <button

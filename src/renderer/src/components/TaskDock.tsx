@@ -65,6 +65,7 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
           <span className="activity" title={lastEvent.ts}>
             {lastEvent.termId ? '🤖 ' : '✎ '}
             {lastEvent.summary}
+            {lastEvent.by && <span className="activity-by"> · {lastEvent.by}</span>}
           </span>
         )}
         <span className="spacer" />
@@ -159,6 +160,11 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
                         onDoubleClick={() => setEditing({ id: task.id, text: task.title })}
                       >
                         {task.title}
+                      </span>
+                    )}
+                    {task.status === 'doing' && task.updatedBy && (
+                      <span className="task-who" title={`In progress · ${task.updatedBy}`}>
+                        {task.updatedBy}
                       </span>
                     )}
                     <button
