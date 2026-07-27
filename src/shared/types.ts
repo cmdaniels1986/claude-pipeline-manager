@@ -124,9 +124,23 @@ export interface TasksState {
   removed?: TaskTombstone[]
 }
 
-export interface TasksChangedPayload {
-  tasks: TasksState
+/** which of a project's two lists an edit / goal belongs to */
+export type TaskScope = 'mine' | 'shared'
+
+/** the full two-list view of the active project's tasks */
+export interface TasksSnapshot {
+  /** private to this machine's app (My Goals) */
+  mine: TasksState
+  /** synced with a coworker (Shared Goals); null when no shared folder is set */
+  shared: TasksState | null
+  /** the shared folder, when configured */
+  sharedPath: string | null
+}
+
+export interface TasksChangedPayload extends TasksSnapshot {
   event: TaskEvent | null
+  /** which list the event came from */
+  scope: TaskScope | null
 }
 
 /** surfaced when a cloud drive creates a "conflicted copy" beside the shared file */

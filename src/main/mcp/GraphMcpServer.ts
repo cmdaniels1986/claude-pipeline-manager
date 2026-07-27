@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from 'zod'
 import type { GraphStore } from '../graph/GraphStore'
 import { edgeInputSchema, edgeKindSchema, nodeInputSchema, nodeStatusSchema, nodeTypeSchema } from '../graph/schema'
-import type { TaskStore } from '../tasks/TaskStore'
+import type { TaskHub } from '../tasks/TaskHub'
 import { taskInputSchema, taskStatusSchema } from '../tasks/schema'
 
 /**
@@ -19,7 +19,7 @@ export class GraphMcpServer {
 
   constructor(
     private getStore: () => GraphStore | null,
-    private getTaskStore: () => TaskStore | null
+    private getTaskStore: () => TaskHub | null
   ) {}
 
   async start(): Promise<number> {
@@ -189,35 +189,41 @@ export class GraphMcpServer {
 
     server.registerTool(
       'tasks_get',
-      { description: 'Current goals & their tasks. Each goal has {id,title} with tasks {id,title,status} (todo|doing|done).' },
+      {
+        description:
+          'Current goals & their tasks, in two lists: "mine" (private to this machine) and "shared" (synced with a coworker; null if this project has no shared list). Each goal has {id,title} with tasks {id,title,status} (todo|doing|done).'
+      },
       async () => {
         const store = this.getTaskStore()
         if (!store) return noTasks()
-        return text(
-          store.get().goals.map((g) => ({
+        const snap = store.snapshot()
+        const mapGoals = (s: { goals: typeof snap.mine.goals }) =>
+          s.goals.map((g) => ({
             id: g.id,
             title: g.title,
             ...(g.note ? { note: g.note } : {}),
             tasks: g.tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))
           }))
-        )
+        return text({ mine: mapGoals(snap.mine), shared: snap.shared ? mapGoals(snap.shared) : null })
       }
     )
 
     server.registerTool(
       'tasks_add_goal',
       {
-        description: 'Add a goal (a top-level objective), optionally with an initial list of tasks. Returns the new ids.',
+        description:
+          'Add a goal (a top-level objective), optionally with an initial list of tasks. Set shared:true to put it on the coworker-synced list (only if this project has one). Returns the new ids.',
         inputSchema: {
           title: z.string().min(1),
           note: z.string().optional().describe('optional context for the goal'),
-          tasks: z.array(taskInputSchema).optional().describe('initial tasks: strings, or {title, note}')
+          tasks: z.array(taskInputSchema).optional().describe('initial tasks: strings, or {title, note}'),
+          shared: z.boolean().optional().describe('add to the shared (coworker-synced) list instead of the private one')
         }
       },
-      async ({ title, note, tasks }) => {
+      async ({ title, note, tasks, shared }) => {
         const store = this.getTaskStore()
         if (!store) return noTasks()
-        return text(store.addGoal({ title, note, tasks }, termId))
+        return text(store.addGoal({ title, note, tasks }, termId, shared ? 'shared' : 'mine'))
       }
     )
 

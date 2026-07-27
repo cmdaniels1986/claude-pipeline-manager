@@ -2,14 +2,14 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CreateTermOptions, Diagnostics, ProjectInfo, TaskStatus } from '../shared/types'
+import type { CreateTermOptions, Diagnostics, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { ProjectManager } from './projects/ProjectManager'
 import { PtyManager } from './pty/PtyManager'
-import { TaskStore } from './tasks/TaskStore'
+import { TaskHub } from './tasks/TaskHub'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
@@ -69,7 +69,7 @@ function sendToTermHost(termId: string, channel: string, payload: unknown): void
 const agentDiscovery = new AgentDiscovery()
 let usageTracker: UsageTracker
 let graphStore: GraphStore | null = null
-let taskStore: TaskStore | null = null
+let taskHub: TaskHub | null = null
 let projectManager: ProjectManager
 let activeProject: string | null = null
 const startupWarnings: string[] = []
@@ -87,30 +87,30 @@ function taskAuthorName(): string {
   }
 }
 
-/** Build a TaskStore for a project (shared cloud file or local), wired to
+/** Build the two-list task hub for a project (a local "My Goals" store plus,
+ *  when a shared folder is set, a synced "Shared Goals" store), wired to
  *  broadcast changes + conflict warnings to the renderer. */
-function makeTaskStore(info: ProjectInfo): TaskStore {
-  const store = new TaskStore(info.root, {
-    filePath: projectManager.tasksFilePathFor(info),
+function makeTaskHub(info: ProjectInfo): TaskHub {
+  return new TaskHub({
+    projectRoot: info.root,
+    sharedPath: info.sharedTasksPath ?? null,
     author: taskAuthorName(),
-    shared: !!info.sharedTasksPath
+    onChange: (payload) => broadcast('tasks:changed', payload),
+    onWarning: (w) => broadcast('tasks:warning', w)
   })
-  store.on('change', (payload) => broadcast('tasks:changed', payload))
-  store.on('warning', (w) => broadcast('tasks:warning', w))
-  return store
 }
 
 function setActiveProject(info: ProjectInfo): void {
   if (activeProject === info.root) return
   graphStore?.dispose()
-  taskStore?.dispose()
+  taskHub?.dispose()
   activeProject = info.root
   graphStore = new GraphStore(info.root)
   graphStore.on('change', (payload) => broadcast('graph:changed', payload))
-  taskStore = makeTaskStore(info)
+  taskHub = makeTaskHub(info)
   agentDiscovery.setProjectRoot(info.root)
   broadcast('graph:changed', { graph: graphStore.get(), event: null })
-  broadcast('tasks:changed', { tasks: taskStore.get(), event: null })
+  broadcast('tasks:changed', { ...taskHub.snapshot(), event: null, scope: null })
 }
 
 function broadcastProjects(): void {
@@ -285,27 +285,27 @@ function registerIpc(): void {
     (_e, { id, folderPath }: { id: string; folderPath: string | null }) => {
       const before = projectManager.list().find((p) => p.id === id)
       if (!before) return null
-      // grab the project's current tasks so we can carry them to the new location
-      const prevState = TaskStore.readFile(projectManager.tasksFilePathFor(before), before.root)
-      const info = projectManager.setSharedTasksPath(id, folderPath)
-      if (!info) return null
-      if (projectManager.activeId() === id) {
-        taskStore?.dispose()
-        taskStore = makeTaskStore(info)
-        taskStore.importState(prevState) // migrate existing tasks into the new store
-        broadcast('tasks:changed', { tasks: taskStore.get(), event: null })
+      if (projectManager.activeId() === id && taskHub) {
+        // turn the shared "Shared Goals" list on/off live (existing goals stay
+        // put; unsharing copies shared goals back into the private list)
+        projectManager.setSharedTasksPath(id, folderPath)
+        taskHub.setSharedPath(folderPath)
+        broadcast('tasks:changed', { ...taskHub.snapshot(), event: null, scope: null })
       } else {
-        // migrate a non-active project without disturbing the live view
-        const tmp = new TaskStore(info.root, {
-          filePath: projectManager.tasksFilePathFor(info),
+        // apply the same transition off to the side for a non-active project
+        const tmp = new TaskHub({
+          projectRoot: before.root,
+          sharedPath: before.sharedTasksPath ?? null,
           author: taskAuthorName(),
-          shared: !!info.sharedTasksPath
+          onChange: () => {},
+          onWarning: () => {}
         })
-        tmp.importState(prevState)
+        tmp.setSharedPath(folderPath)
         tmp.dispose()
+        projectManager.setSharedTasksPath(id, folderPath)
       }
       broadcastProjects()
-      return info
+      return projectManager.list().find((p) => p.id === id) ?? null
     }
   )
   ipcMain.handle('project:revealShared', (_e, folderPath: string) => {
@@ -335,23 +335,27 @@ function registerIpc(): void {
   })
 
   // goals & tasks — human edits from the UI (termId null = "you"); agents use the
-  // task_* MCP tools. Both funnel into the same TaskStore.
-  ipcMain.handle('tasks:get', () => taskStore?.get() ?? null)
-  ipcMain.handle('tasks:addGoal', (_e, p: { title: string; note?: string }) =>
-    taskStore?.addGoal({ title: p.title, note: p.note }, null)
+  // task_* MCP tools. Both funnel through the TaskHub, which routes each edit to
+  // the private ("mine") or shared list that holds the goal/task.
+  ipcMain.handle('tasks:get', () => taskHub?.snapshot() ?? null)
+  ipcMain.handle('tasks:addGoal', (_e, p: { title: string; note?: string; scope?: TaskScope }) =>
+    taskHub?.addGoal({ title: p.title, note: p.note }, null, p.scope ?? 'mine')
   )
   ipcMain.handle('tasks:updateGoal', (_e, p: { goalId: string; title?: string; note?: string }) =>
-    taskStore?.updateGoal(p.goalId, { title: p.title, note: p.note }, null)
+    taskHub?.updateGoal(p.goalId, { title: p.title, note: p.note }, null)
   )
   ipcMain.handle('tasks:addTask', (_e, p: { goalId: string; title: string }) =>
-    taskStore?.addTasks(p.goalId, [p.title], null)
+    taskHub?.addTasks(p.goalId, [p.title], null)
   )
   ipcMain.handle(
     'tasks:updateTask',
     (_e, p: { taskId: string; title?: string; status?: TaskStatus; note?: string }) =>
-      taskStore?.updateTask(p.taskId, { title: p.title, status: p.status, note: p.note }, null)
+      taskHub?.updateTask(p.taskId, { title: p.title, status: p.status, note: p.note }, null)
   )
-  ipcMain.handle('tasks:remove', (_e, ids: string[]) => taskStore?.remove(ids, null))
+  ipcMain.handle('tasks:remove', (_e, ids: string[]) => taskHub?.remove(ids, null))
+  ipcMain.handle('tasks:moveGoal', (_e, p: { goalId: string; scope: TaskScope }) =>
+    taskHub?.moveGoal(p.goalId, p.scope, null)
+  )
 
   // Prompts are queued (not sent raw), so they auto-resume after a usage limit.
   // When usage is available the queue drains immediately, matching the old behavior.
@@ -432,7 +436,7 @@ app.whenReady().then(async () => {
 
   mcpServer = new GraphMcpServer(
     () => graphStore,
-    () => taskStore
+    () => taskHub
   )
   await mcpServer.start()
 
@@ -484,7 +488,7 @@ app.on('before-quit', () => {
   ptyManager?.disposeAll()
   resumeManager?.disposeAll()
   graphStore?.dispose()
-  taskStore?.dispose()
+  taskHub?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
   usageTracker?.dispose()

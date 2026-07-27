@@ -8,9 +8,10 @@ import type {
   ProjectInfo,
   ProjectsState,
   ResumeState,
+  TaskScope,
   TaskStatus,
   TasksChangedPayload,
-  TasksState,
+  TasksSnapshot,
   TasksWarning,
   TermInfo,
   TermUsage,
@@ -74,14 +75,17 @@ const api = {
   onGraphChanged: subscribe<GraphChangedPayload>('graph:changed'),
 
   // goals & tasks
-  tasksGet: (): Promise<TasksState | null> => ipcRenderer.invoke('tasks:get'),
-  tasksAddGoal: (p: { title: string; note?: string }): Promise<unknown> => ipcRenderer.invoke('tasks:addGoal', p),
+  tasksGet: (): Promise<TasksSnapshot | null> => ipcRenderer.invoke('tasks:get'),
+  tasksAddGoal: (p: { title: string; note?: string; scope?: TaskScope }): Promise<unknown> =>
+    ipcRenderer.invoke('tasks:addGoal', p),
   tasksUpdateGoal: (p: { goalId: string; title?: string; note?: string }): Promise<unknown> =>
     ipcRenderer.invoke('tasks:updateGoal', p),
   tasksAddTask: (p: { goalId: string; title: string }): Promise<unknown> => ipcRenderer.invoke('tasks:addTask', p),
   tasksUpdateTask: (p: { taskId: string; title?: string; status?: TaskStatus; note?: string }): Promise<unknown> =>
     ipcRenderer.invoke('tasks:updateTask', p),
   tasksRemove: (ids: string[]): Promise<unknown> => ipcRenderer.invoke('tasks:remove', ids),
+  tasksMoveGoal: (p: { goalId: string; scope: TaskScope }): Promise<unknown> =>
+    ipcRenderer.invoke('tasks:moveGoal', p),
   onTasksChanged: subscribe<TasksChangedPayload>('tasks:changed'),
 
   // prompt queue + usage-limit auto-resume

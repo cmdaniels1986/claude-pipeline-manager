@@ -43,7 +43,7 @@ export function ProjectSwitcher({
     if (res.canceled) return
     await window.api.projectSetShared(p.id, res.path)
     window.alert(
-      `“${p.name}” tasks now live in:\n${res.path}\n\nHave your coworker create a project and share it to the SAME synced folder — you'll both see the same list.`
+      `“${p.name}” now has a Shared Goals list in:\n${res.path}\n\nYour existing goals stay private under “My Goals” — drag any into Shared with the 🔗 button on a goal.\n\nHave your coworker point a project at the SAME synced folder to share it.`
     )
   }
 

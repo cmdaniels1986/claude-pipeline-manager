@@ -422,6 +422,42 @@ button.toggled {
   font-size: 12px;
   line-height: 1.5;
 }
+/* My Goals / Shared Goals sections */
+.task-section {
+  margin-bottom: 18px;
+}
+.task-section + .task-section {
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+}
+.task-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.task-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.task-section-sub {
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 6px;
+}
+.task-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+  margin-top: 4px;
+}
 .goal {
   border: 1px solid var(--line);
   border-radius: 6px;

@@ -204,6 +204,25 @@ export class TaskStore extends EventEmitter {
     return { removed }
   }
 
+  /** Insert a whole goal (with its tasks), re-stamping timestamps so it wins
+   *  merges in its new home. Used to move a goal between the local & shared
+   *  lists. Preserves ids so references stay stable. */
+  insertGoal(goal: Goal, termId: string | null): void {
+    const ts = now()
+    const by = this.who(termId)
+    const cloned: Goal = {
+      ...goal,
+      updatedAt: ts,
+      updatedBy: by,
+      tasks: goal.tasks.map((t) => ({ ...t, updatedAt: ts, updatedBy: by }))
+    }
+    this.state.goals.push(cloned)
+    this.commit(
+      { ts, termId, by, tool: 'move_goal', summary: `goal "${goal.title}" moved here` },
+      cloned
+    )
+  }
+
   /** Migrate an existing task state into this store (used when a project is
    *  switched to/from a shared location): union the old tasks with whatever is
    *  already here, then persist + broadcast. */
