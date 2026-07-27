@@ -3,6 +3,7 @@ import type { Diagnostics, UpdateStatus } from '../../shared/types'
 import { GraphDock } from './components/GraphDock'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
 import { TerminalTabs } from './components/TerminalTabs'
+import { useTerminalStore } from './stores/terminalStore'
 
 const MIN_GRAPH_WIDTH = 340
 const MIN_TERMINALS_WIDTH = 420
@@ -22,6 +23,15 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     void window.api.getActiveProject().then(setProject)
     void window.api.getDiagnostics().then(setDiag)
+    // re-attach to sessions still running in the main process (survives an
+    // idle/sleep-triggered page reload, which would otherwise blank the tabs)
+    void window.api.reconcileTerminals().then((terms) => {
+      const store = useTerminalStore.getState()
+      for (const t of terms) {
+        store.adoptPane({ termId: t.termId, label: t.label, cwd: t.cwd, color: t.color })
+        void window.api.termClaim(t.termId)
+      }
+    })
     const offProject = window.api.onProjectChanged(setProject)
     const offUpdates = window.api.onUpdatesAvailable(setUpdate)
     return () => {

@@ -17,6 +17,7 @@ import {
   closeTerminalWindow,
   createMainWindow,
   getMainWindow,
+  isTerminalPoppedOut,
   openGraphWindow,
   openTerminalWindow
 } from './windows'
@@ -170,6 +171,11 @@ function registerIpc(): void {
     closeTerminalWindow(termId)
   })
   ipcMain.handle('term:list', () => ptyManager.list())
+  // live terminals the main window should re-adopt after a renderer reload
+  // (idle/sleep can reload the dev page); excludes ones hosted in a pop-out window
+  ipcMain.handle('term:reconcile', () =>
+    ptyManager.list().filter((t) => t.alive && !isTerminalPoppedOut(t.termId))
+  )
 
   ipcMain.handle('agents:list', () => agentDiscovery.list())
   ipcMain.handle('agents:createStarter', (_e, name: string) => agentDiscovery.createStarter(name))

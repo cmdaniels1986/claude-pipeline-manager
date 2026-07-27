@@ -95,3 +95,9 @@ export function closeTerminalWindow(termId: string): void {
   const win = termWindows.get(termId)
   if (win && !win.isDestroyed()) win.close()
 }
+
+/** true when this terminal is currently hosted in its own popped-out window */
+export function isTerminalPoppedOut(termId: string): boolean {
+  const win = termWindows.get(termId)
+  return !!win && !win.isDestroyed()
+}
