@@ -17,7 +17,7 @@ export function TerminalPickerDialog({
   }, [])
 
   const send = async (term: TermInfo): Promise<void> => {
-    await window.api.promptInject({ termId: term.termId, text: promptText, autoSubmit: true })
+    await window.api.promptInject({ termId: term.termId, text: promptText })
     onDone(term.label)
   }
 

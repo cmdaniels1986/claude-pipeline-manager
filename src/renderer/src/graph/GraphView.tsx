@@ -182,8 +182,8 @@ export function GraphView(): React.JSX.Element {
   if (!graph) {
     return (
       <div className="empty-state">
-        <h2>No active project</h2>
-        <p>Open a project folder and launch a terminal in the main window — the graph appears as Claude maps your pipeline.</p>
+        <h2>Loading…</h2>
+        <p>Launch a terminal in this project — the graph appears as Claude maps your pipeline.</p>
       </div>
     )
   }

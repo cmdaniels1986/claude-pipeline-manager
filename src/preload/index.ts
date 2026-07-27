@@ -5,6 +5,12 @@ import type {
   Diagnostics,
   GraphChangedPayload,
   GraphState,
+  ProjectInfo,
+  ProjectsState,
+  ResumeState,
+  TaskStatus,
+  TasksChangedPayload,
+  TasksState,
   TermInfo,
   TermUsage,
   UpdateCheckResult,
@@ -34,17 +40,21 @@ const api = {
   onTermExit: subscribe<{ termId: string; exitCode: number }>('term:exit'),
   onTermUsage: subscribe<TermUsage>('term:usage'),
   onTermAdopt: subscribe<{ termId: string; label: string; cwd: string; color?: string }>('term:adopt'),
+  onTermResumed: subscribe<string>('term:resumed'),
 
   // agents
   agentsList: (): Promise<AgentInfo[]> => ipcRenderer.invoke('agents:list'),
   agentsCreateStarter: (name: string): Promise<AgentInfo> => ipcRenderer.invoke('agents:createStarter', name),
   onAgentsChanged: subscribe<null>('agents:changed'),
 
-  // project
-  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('project:pickFolder'),
-  getActiveProject: (): Promise<string | null> => ipcRenderer.invoke('project:getActive'),
-  setActiveProject: (root: string): Promise<string> => ipcRenderer.invoke('project:setActive', root),
-  onProjectChanged: subscribe<string>('project:changed'),
+  // projects (app-managed library)
+  projectsList: (): Promise<ProjectsState> => ipcRenderer.invoke('project:list'),
+  getActiveProject: (): Promise<ProjectInfo | null> => ipcRenderer.invoke('project:getActive'),
+  projectCreate: (name: string): Promise<ProjectInfo> => ipcRenderer.invoke('project:create', name),
+  projectSwitch: (id: string): Promise<ProjectInfo | null> => ipcRenderer.invoke('project:switch', id),
+  projectRename: (id: string, name: string): Promise<void> => ipcRenderer.invoke('project:rename', { id, name }),
+  projectRemove: (id: string): Promise<ProjectsState> => ipcRenderer.invoke('project:remove', id),
+  onProjectsChanged: subscribe<ProjectsState>('projects:changed'),
 
   // graph
   graphGet: (): Promise<GraphState | null> => ipcRenderer.invoke('graph:get'),
@@ -55,9 +65,25 @@ const api = {
     ipcRenderer.invoke('graph:export'),
   onGraphChanged: subscribe<GraphChangedPayload>('graph:changed'),
 
-  // prompt injection
-  promptInject: (opts: { termId: string; text: string; autoSubmit: boolean }): Promise<void> =>
+  // goals & tasks
+  tasksGet: (): Promise<TasksState | null> => ipcRenderer.invoke('tasks:get'),
+  tasksAddGoal: (p: { title: string; note?: string }): Promise<unknown> => ipcRenderer.invoke('tasks:addGoal', p),
+  tasksUpdateGoal: (p: { goalId: string; title?: string; note?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('tasks:updateGoal', p),
+  tasksAddTask: (p: { goalId: string; title: string }): Promise<unknown> => ipcRenderer.invoke('tasks:addTask', p),
+  tasksUpdateTask: (p: { taskId: string; title?: string; status?: TaskStatus; note?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('tasks:updateTask', p),
+  tasksRemove: (ids: string[]): Promise<unknown> => ipcRenderer.invoke('tasks:remove', ids),
+  onTasksChanged: subscribe<TasksChangedPayload>('tasks:changed'),
+
+  // prompt queue + usage-limit auto-resume
+  // (promptInject enqueues; the queue drains immediately when usage is available)
+  promptInject: (opts: { termId: string; text: string }): Promise<void> =>
     ipcRenderer.invoke('prompt:inject', opts),
+  resumeGet: (): Promise<ResumeState[]> => ipcRenderer.invoke('resume:get'),
+  resumeNow: (termId: string): Promise<void> => ipcRenderer.invoke('resume:now', termId),
+  resumeCancel: (termId: string): Promise<void> => ipcRenderer.invoke('resume:cancel', termId),
+  onResumeChanged: subscribe<ResumeState>('resume:changed'),
 
   // node source files
   openFile: (path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('file:open', path),

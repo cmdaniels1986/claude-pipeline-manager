@@ -10,6 +10,8 @@ interface TermRec {
   agentName?: string
   color?: string
   alive: boolean
+  /** original launch options, kept so the session can be relaunched with --resume */
+  opts: CreateTermOptions
 }
 
 export interface PtyManagerDeps {
@@ -32,6 +34,38 @@ export class PtyManager {
 
   create(opts: CreateTermOptions): TermInfo {
     const termId = randomUUID()
+    const rec: TermRec = {
+      termId,
+      pty: this.spawnClaude(termId, opts, false),
+      cwd: opts.cwd,
+      agentName: opts.agentName,
+      color: opts.color,
+      alive: true,
+      opts
+    }
+    this.terms.set(termId, rec)
+    this.wire(rec)
+    return this.toInfo(rec)
+  }
+
+  /** Relaunches an ended session with --resume so its conversation continues under
+   *  the same termId (used to bring a session back after a usage-limit reset). No-op
+   *  if the session is still alive. Returns false if the terminal is unknown. */
+  relaunchResume(termId: string): boolean {
+    const rec = this.terms.get(termId)
+    if (!rec) return false
+    if (rec.alive) return true
+    rec.pty = this.spawnClaude(termId, rec.opts, true)
+    rec.alive = true
+    this.wire(rec)
+    return true
+  }
+
+  isAlive(termId: string): boolean {
+    return this.terms.get(termId)?.alive ?? false
+  }
+
+  private spawnClaude(termId: string, opts: CreateTermOptions, resume: boolean): IPty {
     const mcpConfigPath = this.deps.writeMcpConfig(termId)
     const args = buildLaunchArgs({
       sessionId: termId,
@@ -41,10 +75,10 @@ export class PtyManager {
       mcpConfigPath,
       protocolPath: this.deps.protocolPath,
       settingsFallbackPath: this.deps.settingsFallbackPath,
-      hasAppendSystemPromptFile: this.deps.hasAppendSystemPromptFile
+      hasAppendSystemPromptFile: this.deps.hasAppendSystemPromptFile,
+      resume
     })
-
-    const pty = spawn(this.deps.claudeExePath, args, {
+    return spawn(this.deps.claudeExePath, args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,
@@ -57,24 +91,14 @@ export class PtyManager {
         ...this.deps.usageEnv()
       }
     })
+  }
 
-    const rec: TermRec = {
-      termId,
-      pty,
-      cwd: opts.cwd,
-      agentName: opts.agentName,
-      color: opts.color,
-      alive: true
-    }
-    this.terms.set(termId, rec)
-
-    pty.onData((data) => this.deps.onData(termId, data))
-    pty.onExit(({ exitCode }) => {
+  private wire(rec: TermRec): void {
+    rec.pty.onData((data) => this.deps.onData(rec.termId, data))
+    rec.pty.onExit(({ exitCode }) => {
       rec.alive = false
-      this.deps.onExit(termId, exitCode)
+      this.deps.onExit(rec.termId, exitCode)
     })
-
-    return this.toInfo(rec)
   }
 
   write(termId: string, data: string): void {

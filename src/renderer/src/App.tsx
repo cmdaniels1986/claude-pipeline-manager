@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Diagnostics, UpdateStatus } from '../../shared/types'
+import type { Diagnostics, ProjectInfo, UpdateStatus } from '../../shared/types'
 import { GraphDock } from './components/GraphDock'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
+import { ProjectSwitcher } from './components/ProjectSwitcher'
+import { TaskDock } from './components/TaskDock'
 import { TerminalTabs } from './components/TerminalTabs'
+import { sessionBadge, sessionTotals } from './components/usageFormat'
 import { useTerminalStore } from './stores/terminalStore'
 
 const MIN_GRAPH_WIDTH = 340
 const MIN_TERMINALS_WIDTH = 420
 
 export default function App(): React.JSX.Element {
-  const [project, setProject] = useState<string | null>(null)
+  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [diag, setDiag] = useState<Diagnostics | null>(null)
   const [showWarnings, setShowWarnings] = useState(false)
-  const [showGraph, setShowGraph] = useState(true)
+  const [rightView, setRightView] = useState<'graph' | 'tasks' | null>('graph')
   const [graphWidth, setGraphWidth] = useState(Math.round(window.innerWidth * 0.42))
   const [dragging, setDragging] = useState(false)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
@@ -21,9 +25,15 @@ export default function App(): React.JSX.Element {
   const [updateNote, setUpdateNote] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [login, setLogin] = useState<{ checking: boolean; ok?: boolean; detail?: string } | null>(null)
+  const usage = useTerminalStore((s) => s.usage)
+  const billingReal = useTerminalStore((s) => s.billingReal)
+  const totals = sessionTotals(usage)
 
   useEffect(() => {
-    void window.api.getActiveProject().then(setProject)
+    void window.api.projectsList().then(({ projects, activeId }) => {
+      setProjects(projects)
+      setActiveId(activeId)
+    })
     void window.api.getDiagnostics().then(setDiag)
     // re-attach to sessions still running in the main process (survives an
     // idle/sleep-triggered page reload, which would otherwise blank the tabs)
@@ -34,10 +44,13 @@ export default function App(): React.JSX.Element {
         void window.api.termClaim(t.termId)
       }
     })
-    const offProject = window.api.onProjectChanged(setProject)
+    const offProjects = window.api.onProjectsChanged(({ projects, activeId }) => {
+      setProjects(projects)
+      setActiveId(activeId)
+    })
     const offUpdates = window.api.onUpdatesAvailable(setUpdate)
     return () => {
-      offProject()
+      offProjects()
       offUpdates()
     }
   }, [])
@@ -72,14 +85,6 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  const pickProject = async (): Promise<void> => {
-    const picked = await window.api.pickFolder()
-    if (picked) {
-      await window.api.setActiveProject(picked)
-      setProject(picked)
-    }
-  }
-
   const startDivider = useCallback(
     (e: React.MouseEvent): void => {
       e.preventDefault()
@@ -102,24 +107,29 @@ export default function App(): React.JSX.Element {
     [graphWidth]
   )
 
-  const projectName = project ? (project.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? project) : null
+  const activeProject = projects.find((p) => p.id === activeId) ?? null
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <span className="app-title">Claude Pipeline Manager</span>
-        <button onClick={() => void pickProject()} title={project ?? 'No project selected'}>
-          📁 {projectName ?? 'Open project…'}
-        </button>
+        <ProjectSwitcher projects={projects} activeId={activeId} />
         <button className="primary" onClick={() => setDialogOpen(true)}>
           ＋ New Terminal
         </button>
         <button
-          className={showGraph ? 'toggled' : ''}
-          onClick={() => setShowGraph((v) => !v)}
-          title={showGraph ? 'Hide the graph panel' : 'Show the graph panel'}
+          className={rightView === 'graph' ? 'toggled' : ''}
+          onClick={() => setRightView((v) => (v === 'graph' ? null : 'graph'))}
+          title={rightView === 'graph' ? 'Hide the graph panel' : 'Show the pipeline graph'}
         >
           🗺 Pipeline Graph
+        </button>
+        <button
+          className={rightView === 'tasks' ? 'toggled' : ''}
+          onClick={() => setRightView((v) => (v === 'tasks' ? null : 'tasks'))}
+          title={rightView === 'tasks' ? 'Hide the tasks panel' : 'Show goals & tasks'}
+        >
+          ✓ Goals &amp; Tasks
         </button>
         <button
           onClick={() => void runLoginCheck()}
@@ -132,6 +142,15 @@ export default function App(): React.JSX.Element {
           ⟳ {checking ? 'Checking…' : 'Updates'}
         </button>
         <span className="spacer" />
+        {totals.terminals > 0 && (
+          <span
+            className="session-usage"
+            title={`Total usage across all ${totals.terminals} terminal${totals.terminals > 1 ? 's' : ''} since you opened the app${billingReal ? '' : ' (≈ = notional; subscription is flat-rate)'}`}
+          >
+            Σ {sessionBadge(totals, billingReal)}
+            <span className="session-usage-terms">{totals.terminals} term{totals.terminals > 1 ? 's' : ''}</span>
+          </span>
+        )}
         {diag && (
           <span className="diag" title={`Claude ${diag.claudeVersion} · graph MCP on :${diag.mcpPort}`}>
             {diag.claudeVersion.split(' ')[0]} · MCP :{diag.mcpPort}
@@ -212,18 +231,28 @@ export default function App(): React.JSX.Element {
         <div className="split-left">
           <TerminalTabs onNewTerminal={() => setDialogOpen(true)} />
         </div>
-        {showGraph && (
+        {rightView && (
           <>
             <div className="split-divider" onMouseDown={startDivider} />
             <div className="split-right" style={{ width: graphWidth }}>
-              <GraphDock onClose={() => setShowGraph(false)} />
+              {rightView === 'graph' ? (
+                <GraphDock onClose={() => setRightView(null)} />
+              ) : (
+                <TaskDock onClose={() => setRightView(null)} />
+              )}
             </div>
           </>
         )}
         {dragging && <div className="drag-overlay" />}
       </main>
 
-      {dialogOpen && <NewTerminalDialog defaultCwd={project} onClose={() => setDialogOpen(false)} />}
+      {dialogOpen && (
+        <NewTerminalDialog
+          projectRoot={activeProject?.root ?? null}
+          projectName={activeProject?.name ?? null}
+          onClose={() => setDialogOpen(false)}
+        />
+      )}
     </div>
   )
 }

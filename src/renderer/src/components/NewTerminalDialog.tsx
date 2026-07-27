@@ -6,15 +6,16 @@ const NO_AGENT = '__none__'
 const NEW_AGENT = '__new__'
 
 export function NewTerminalDialog({
-  defaultCwd,
+  projectRoot,
+  projectName,
   onClose
 }: {
-  defaultCwd: string | null
+  projectRoot: string | null
+  projectName: string | null
   onClose: () => void
 }): React.JSX.Element {
   const addPane = useTerminalStore((s) => s.addPane)
   const paneCount = useTerminalStore((s) => s.panes.length)
-  const [cwd, setCwd] = useState(defaultCwd ?? '')
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [agentChoice, setAgentChoice] = useState(NO_AGENT)
   const [newAgentName, setNewAgentName] = useState('')
@@ -32,11 +33,6 @@ export function NewTerminalDialog({
     return window.api.onAgentsChanged(refreshAgents)
   }, [])
 
-  const browse = async (): Promise<void> => {
-    const picked = await window.api.pickFolder()
-    if (picked) setCwd(picked)
-  }
-
   const createAgent = async (): Promise<void> => {
     try {
       const info = await window.api.agentsCreateStarter(newAgentName)
@@ -49,14 +45,13 @@ export function NewTerminalDialog({
     }
   }
 
-  const launch = async (): Promise<void> => {
-    if (!cwd.trim()) {
-      setError('Pick a working folder first.')
+  const launch = (): void => {
+    if (!projectRoot) {
+      setError('Create a project first.')
       return
     }
-    if (!defaultCwd) await window.api.setActiveProject(cwd.trim())
     addPane({
-      cwd: cwd.trim(),
+      cwd: projectRoot,
       agentName: agentChoice !== NO_AGENT && agentChoice !== NEW_AGENT ? agentChoice : undefined,
       model: model.trim() || undefined,
       color,
@@ -70,16 +65,8 @@ export function NewTerminalDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>New Claude terminal</h3>
 
-        <label>Working folder</label>
-        <div className="row">
-          <input
-            value={cwd}
-            onChange={(e) => setCwd(e.target.value)}
-            placeholder="C:\path\to\project"
-            spellCheck={false}
-          />
-          <button onClick={() => void browse()}>Browse…</button>
-        </div>
+        <label>Project</label>
+        <p className="modal-note project-context">📁 {projectName ?? 'No project — create one first'}</p>
 
         <label>Agent</label>
         <select value={agentChoice} onChange={(e) => setAgentChoice(e.target.value)}>

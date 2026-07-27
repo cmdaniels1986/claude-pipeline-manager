@@ -10,10 +10,15 @@ export interface LaunchArgOptions {
    *  the installed CLI lacks --append-system-prompt-file */
   settingsFallbackPath: string
   hasAppendSystemPromptFile: boolean
+  /** resume an existing conversation (same id) instead of starting a fresh session —
+   *  used to bring a session back after it ended on a usage limit, keeping context */
+  resume?: boolean
 }
 
 export function buildLaunchArgs(o: LaunchArgOptions): string[] {
-  const args: string[] = ['--session-id', o.sessionId, '--mcp-config', o.mcpConfigPath]
+  const args: string[] = o.resume
+    ? ['--resume', o.sessionId, '--mcp-config', o.mcpConfigPath]
+    : ['--session-id', o.sessionId, '--mcp-config', o.mcpConfigPath]
   if (o.hasAppendSystemPromptFile) {
     args.push('--append-system-prompt-file', o.protocolPath)
   } else {

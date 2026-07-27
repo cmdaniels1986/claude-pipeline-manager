@@ -2,16 +2,20 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CreateTermOptions, Diagnostics } from '../shared/types'
+import type { CreateTermOptions, Diagnostics, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
+import { ProjectManager } from './projects/ProjectManager'
 import { PtyManager } from './pty/PtyManager'
+import { TaskStore } from './tasks/TaskStore'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
+import { ResumeManager } from './usage/ResumeManager'
 import { UsageTracker } from './usage/UsageTracker'
+import { buildUserMemoryBlock } from './userMemory'
 import {
   broadcast,
   closeTerminalWindow,
@@ -39,10 +43,17 @@ A live shared pipeline graph is visible to a human in real time; keep it current
 - After reading pipeline code (SQL/dbt/Python ETL), record datasets + lineage: graph_upsert_nodes (stable snake_case ids matching artifact names; set path) and graph_upsert_edges (source feeds target). Record only lineage you confirmed in code.
 - graph_set_status: in_progress when you start changing a node; validated (with evidence) when done; stale for downstream nodes a change may invalidate; breaking (say what breaks) when incompatible.
 - graph_remove only when an artifact is deleted. Call graph_get (compact) if you need the current graph.
+
+# Goals & Tasks
+A human sees a live goals/tasks board (shared with you via the "graph" MCP server's task_* tools). Keep it current so they can follow your progress.
+- When you take on a multi-step piece of work, capture it: tasks_add_goal (an objective, optionally with an initial task list) and tasks_add_tasks (more tasks under a goal).
+- tasks_set_status as you go: doing when you start a task, done when it's finished. This is the main signal the human watches — keep it honest.
+- tasks_get to see the current board; tasks_remove only when an item is genuinely no longer relevant. The human also edits this board, so don't wipe their entries.
 `
 
 let claudeInfo: ClaudeInfo
 let ptyManager: PtyManager
+let resumeManager: ResumeManager
 let mcpServer: GraphMcpServer
 /** which renderer window currently hosts each terminal's UI */
 const termHosts = new Map<string, Electron.WebContents>()
@@ -58,6 +69,8 @@ function sendToTermHost(termId: string, channel: string, payload: unknown): void
 const agentDiscovery = new AgentDiscovery()
 let usageTracker: UsageTracker
 let graphStore: GraphStore | null = null
+let taskStore: TaskStore | null = null
+let projectManager: ProjectManager
 let activeProject: string | null = null
 const startupWarnings: string[] = []
 
@@ -68,12 +81,19 @@ function userDataPath(...parts: string[]): string {
 function setActiveProject(root: string): void {
   if (activeProject === root) return
   graphStore?.dispose()
+  taskStore?.dispose()
   activeProject = root
   graphStore = new GraphStore(root)
   graphStore.on('change', (payload) => broadcast('graph:changed', payload))
+  taskStore = new TaskStore(root)
+  taskStore.on('change', (payload) => broadcast('tasks:changed', payload))
   agentDiscovery.setProjectRoot(root)
-  broadcast('project:changed', root)
   broadcast('graph:changed', { graph: graphStore.get(), event: null })
+  broadcast('tasks:changed', { tasks: taskStore.get(), event: null })
+}
+
+function broadcastProjects(): void {
+  broadcast('projects:changed', { projects: projectManager.list(), activeId: projectManager.activeId() })
 }
 
 function collectWarnings(): void {
@@ -94,10 +114,25 @@ function collectWarnings(): void {
   }
 }
 
+/** Graph protocol + the user's cross-project memory index, so every spawned
+ *  session starts with the same context as opening Claude normally. */
+function buildProtocolContent(): string {
+  const memory = buildUserMemoryBlock()
+  return memory ? `${GRAPH_PROTOCOL}\n${memory}\n` : GRAPH_PROTOCOL
+}
+
+const protocolFilePath = (): string => userDataPath('graph-protocol.md')
+
+/** Rewrites the protocol file with the current user memory. Called before each
+ *  spawn so long-running app sessions pick up memory edits made since launch. */
+function refreshProtocolFile(): void {
+  writeFileSync(protocolFilePath(), buildProtocolContent())
+}
+
 function writeSupportFiles(): { protocolPath: string; settingsFallbackPath: string } {
   mkdirSync(app.getPath('userData'), { recursive: true })
-  const protocolPath = userDataPath('graph-protocol.md')
-  writeFileSync(protocolPath, GRAPH_PROTOCOL)
+  const protocolPath = protocolFilePath()
+  writeFileSync(protocolPath, buildProtocolContent())
   // Fallback for CLIs without --append-system-prompt-file: a SessionStart hook that
   // emits the protocol into context.
   const settingsFallbackPath = userDataPath('session-settings.json')
@@ -127,7 +162,7 @@ function registerIpc(): void {
       isDir = false
     }
     if (!isDir) throw new Error(`Working folder does not exist: ${opts.cwd}`)
-    if (!activeProject) setActiveProject(opts.cwd)
+    refreshProtocolFile()
     const info = ptyManager.create(opts)
     termHosts.set(info.termId, e.sender)
     usageTracker.track(info.termId)
@@ -166,6 +201,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('term:dispose', (_e, termId: string) => {
     ptyManager.dispose(termId)
+    resumeManager.dispose(termId)
     termHosts.delete(termId)
     usageTracker.untrack(termId)
     closeTerminalWindow(termId)
@@ -180,17 +216,36 @@ function registerIpc(): void {
   ipcMain.handle('agents:list', () => agentDiscovery.list())
   ipcMain.handle('agents:createStarter', (_e, name: string) => agentDiscovery.createStarter(name))
 
-  ipcMain.handle('project:pickFolder', async () => {
-    const win = getMainWindow()
-    const result = win
-      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
-    return result.canceled ? null : result.filePaths[0]
+  ipcMain.handle('project:list', () => ({
+    projects: projectManager.list(),
+    activeId: projectManager.activeId()
+  }))
+  ipcMain.handle('project:getActive', () => projectManager.getActive())
+  ipcMain.handle('project:create', (_e, name: string) => {
+    const info = projectManager.create(name)
+    setActiveProject(info.root)
+    broadcastProjects()
+    return info
   })
-  ipcMain.handle('project:getActive', () => activeProject)
-  ipcMain.handle('project:setActive', (_e, root: string) => {
-    setActiveProject(root)
-    return activeProject
+  ipcMain.handle('project:switch', (_e, id: string) => {
+    const info = projectManager.setActive(id)
+    if (info) {
+      setActiveProject(info.root)
+      broadcastProjects()
+    }
+    return info
+  })
+  ipcMain.handle('project:rename', (_e, { id, name }: { id: string; name: string }) => {
+    projectManager.rename(id, name)
+    broadcastProjects()
+  })
+  ipcMain.handle('project:remove', (_e, id: string) => {
+    projectManager.remove(id)
+    // keep an active project alive at all times
+    const active = projectManager.ensureDefault()
+    setActiveProject(active.root)
+    broadcastProjects()
+    return { projects: projectManager.list(), activeId: projectManager.activeId() }
   })
 
   ipcMain.handle('graph:get', () => graphStore?.get() ?? null)
@@ -215,12 +270,33 @@ function registerIpc(): void {
     return { ok: true, path: result.filePath }
   })
 
-  ipcMain.handle(
-    'prompt:inject',
-    (_e, { termId, text, autoSubmit }: { termId: string; text: string; autoSubmit: boolean }) => {
-      ptyManager.injectPrompt(termId, text, autoSubmit)
-    }
+  // goals & tasks — human edits from the UI (termId null = "you"); agents use the
+  // task_* MCP tools. Both funnel into the same TaskStore.
+  ipcMain.handle('tasks:get', () => taskStore?.get() ?? null)
+  ipcMain.handle('tasks:addGoal', (_e, p: { title: string; note?: string }) =>
+    taskStore?.addGoal({ title: p.title, note: p.note }, null)
   )
+  ipcMain.handle('tasks:updateGoal', (_e, p: { goalId: string; title?: string; note?: string }) =>
+    taskStore?.updateGoal(p.goalId, { title: p.title, note: p.note }, null)
+  )
+  ipcMain.handle('tasks:addTask', (_e, p: { goalId: string; title: string }) =>
+    taskStore?.addTasks(p.goalId, [p.title], null)
+  )
+  ipcMain.handle(
+    'tasks:updateTask',
+    (_e, p: { taskId: string; title?: string; status?: TaskStatus; note?: string }) =>
+      taskStore?.updateTask(p.taskId, { title: p.title, status: p.status, note: p.note }, null)
+  )
+  ipcMain.handle('tasks:remove', (_e, ids: string[]) => taskStore?.remove(ids, null))
+
+  // Prompts are queued (not sent raw), so they auto-resume after a usage limit.
+  // When usage is available the queue drains immediately, matching the old behavior.
+  ipcMain.handle('prompt:inject', (_e, { termId, text }: { termId: string; text: string }) => {
+    resumeManager.enqueue(termId, text)
+  })
+  ipcMain.handle('resume:get', () => resumeManager.states())
+  ipcMain.handle('resume:now', (_e, termId: string) => resumeManager.resumeNow(termId))
+  ipcMain.handle('resume:cancel', (_e, termId: string) => resumeManager.cancel(termId))
 
   ipcMain.handle('app:diagnostics', (): Diagnostics => {
     return {
@@ -290,7 +366,10 @@ app.whenReady().then(async () => {
   collectWarnings()
   const { protocolPath, settingsFallbackPath } = writeSupportFiles()
 
-  mcpServer = new GraphMcpServer(() => graphStore)
+  mcpServer = new GraphMcpServer(
+    () => graphStore,
+    () => taskStore
+  )
   await mcpServer.start()
 
   usageTracker = new UsageTracker((usage) => sendToTermHost(usage.termId, 'term:usage', usage))
@@ -303,11 +382,30 @@ app.whenReady().then(async () => {
     settingsFallbackPath,
     writeMcpConfig: (termId) => writeMcpConfigFile(app.getPath('userData'), termId, mcpServer.port),
     usageEnv: () => usageTracker.envFor(),
-    onData: (termId, data) => sendToTermHost(termId, 'term:data', { termId, data }),
-    onExit: (termId, exitCode) => sendToTermHost(termId, 'term:exit', { termId, exitCode })
+    onData: (termId, data) => {
+      sendToTermHost(termId, 'term:data', { termId, data })
+      resumeManager?.observe(termId, data)
+    },
+    onExit: (termId, exitCode) => {
+      sendToTermHost(termId, 'term:exit', { termId, exitCode })
+      resumeManager?.onExit(termId)
+    }
+  })
+
+  resumeManager = new ResumeManager({
+    inject: (termId, text) => ptyManager.injectPrompt(termId, text, true),
+    relaunchResume: (termId) => ptyManager.relaunchResume(termId),
+    isAlive: (termId) => ptyManager.isAlive(termId),
+    onState: (state) => broadcast('resume:changed', state),
+    onResumed: (termId) => sendToTermHost(termId, 'term:resumed', termId)
   })
 
   agentDiscovery.on('changed', () => broadcast('agents:changed', null))
+
+  // app-managed project library — always open one so the graph/tasks have a home
+  projectManager = new ProjectManager(app.getPath('userData'))
+  const active = projectManager.ensureDefault()
+  setActiveProject(active.root)
 
   registerIpc()
   createMainWindow()
@@ -320,7 +418,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   ptyManager?.disposeAll()
+  resumeManager?.disposeAll()
   graphStore?.dispose()
+  taskStore?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
   usageTracker?.dispose()

@@ -24,3 +24,38 @@ export function usageBadge(u: TermUsage, billingReal: boolean): string {
   if (c) return billingReal ? c : `≈${c}`
   return fmtTokens(totalTokens(u))
 }
+
+export interface SessionTotals {
+  /** summed USD across sessions that reported a cost; null when none did */
+  cost: number | null
+  tokens: number
+  /** number of terminals that have reported any usage this app session */
+  terminals: number
+}
+
+/** Totals across every terminal that has reported usage since the app opened.
+ *  The store keeps a terminal's last usage even after its tab closes, so this
+ *  reflects the whole app session, not just the terminals still open. */
+export function sessionTotals(usage: Record<string, TermUsage>): SessionTotals {
+  let cost = 0
+  let hasCost = false
+  let tokens = 0
+  let terminals = 0
+  for (const u of Object.values(usage)) {
+    terminals++
+    tokens += totalTokens(u)
+    if (u.costUsd != null) {
+      cost += u.costUsd
+      hasCost = true
+    }
+  }
+  return { cost: hasCost ? cost : null, tokens, terminals }
+}
+
+/** Header pill text for the whole-session total: cost (≈ when notional) + tokens. */
+export function sessionBadge(t: SessionTotals, billingReal: boolean): string {
+  const c = fmtCost(t.cost)
+  const money = c ? (billingReal ? c : `≈${c}`) : null
+  const toks = `${fmtTokens(t.tokens)} tok`
+  return money ? `${money} · ${toks}` : toks
+}

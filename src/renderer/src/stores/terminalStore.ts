@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { TermUsage } from '../../../shared/types'
+import type { ResumeState, TermUsage } from '../../../shared/types'
 
 export interface PaneRec {
   paneId: string
@@ -21,6 +21,8 @@ interface TerminalStore {
   activePaneId: string | null
   usage: Record<string, TermUsage>
   setUsage: (usage: TermUsage) => void
+  resume: Record<string, ResumeState>
+  setResume: (state: ResumeState) => void
   /** true when sessions bill per-token (API key) — cost is real, not notional */
   billingReal: boolean
   addPane: (opts: {
@@ -34,6 +36,8 @@ interface TerminalStore {
   setActive: (paneId: string) => void
   setLive: (paneId: string, termId: string, label: string) => void
   setExited: (termId: string, exitCode: number) => void
+  /** a session was relaunched (--resume) after a usage limit — flip it back to live */
+  setResumedLive: (termId: string) => void
   /** remove the tab and kill nothing — used when the terminal moves to another window */
   releasePane: (paneId: string) => void
   removePane: (paneId: string) => void
@@ -53,6 +57,8 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   activePaneId: null,
   usage: {},
   setUsage: (usage) => set((s) => ({ usage: { ...s.usage, [usage.termId]: usage } })),
+  resume: {},
+  setResume: (state) => set((s) => ({ resume: { ...s.resume, [state.termId]: state } })),
   billingReal: false,
   addPane: (opts) =>
     set((s) => {
@@ -104,6 +110,12 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   setExited: (termId, exitCode) =>
     set((s) => ({
       panes: s.panes.map((p) => (p.termId === termId ? { ...p, status: 'exited' as const, exitCode } : p))
+    })),
+  setResumedLive: (termId) =>
+    set((s) => ({
+      panes: s.panes.map((p) =>
+        p.termId === termId ? { ...p, status: 'live' as const, exitCode: undefined } : p
+      )
     })),
   releasePane: (paneId) => set((s) => withoutPane(s, paneId)),
   removePane: (paneId) => set((s) => withoutPane(s, paneId))
@@ -162,6 +174,12 @@ if (typeof window !== 'undefined' && window.api) {
   })
   window.api.onTermUsage((usage) => {
     useTerminalStore.getState().setUsage(usage)
+  })
+  window.api.onResumeChanged((state) => useTerminalStore.getState().setResume(state))
+  window.api.onTermResumed((termId) => useTerminalStore.getState().setResumedLive(termId))
+  void window.api.resumeGet().then((states) => {
+    const store = useTerminalStore.getState()
+    for (const s of states) store.setResume(s)
   })
   void window.api.getDiagnostics().then((d) => useTerminalStore.setState({ billingReal: d.apiKeyBilling }))
   ;(window as unknown as Record<string, unknown>).__termDebug = {

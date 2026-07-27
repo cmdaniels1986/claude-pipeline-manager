@@ -4,6 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from 'zod'
 import type { GraphStore } from '../graph/GraphStore'
 import { edgeInputSchema, edgeKindSchema, nodeInputSchema, nodeStatusSchema, nodeTypeSchema } from '../graph/schema'
+import type { TaskStore } from '../tasks/TaskStore'
+import { taskInputSchema, taskStatusSchema } from '../tasks/schema'
 
 /**
  * One shared HTTP MCP server for all Claude terminals (stateless streamable-http:
@@ -15,7 +17,10 @@ export class GraphMcpServer {
   private http: Server | null = null
   port = 0
 
-  constructor(private getStore: () => GraphStore | null) {}
+  constructor(
+    private getStore: () => GraphStore | null,
+    private getTaskStore: () => TaskStore | null
+  ) {}
 
   async start(): Promise<number> {
     this.http = createServer((req, res) => {
@@ -176,6 +181,85 @@ export class GraphMcpServer {
         const store = this.getStore()
         if (!store) return noStore()
         return text(store.remove(nodeIds ?? [], edgeIds ?? [], termId))
+      }
+    )
+
+    // ---- goals & tasks -----------------------------------------------------
+    const noTasks = () => text({ error: 'No active project — open a project folder first.' })
+
+    server.registerTool(
+      'tasks_get',
+      { description: 'Current goals & their tasks. Each goal has {id,title} with tasks {id,title,status} (todo|doing|done).' },
+      async () => {
+        const store = this.getTaskStore()
+        if (!store) return noTasks()
+        return text(
+          store.get().goals.map((g) => ({
+            id: g.id,
+            title: g.title,
+            ...(g.note ? { note: g.note } : {}),
+            tasks: g.tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))
+          }))
+        )
+      }
+    )
+
+    server.registerTool(
+      'tasks_add_goal',
+      {
+        description: 'Add a goal (a top-level objective), optionally with an initial list of tasks. Returns the new ids.',
+        inputSchema: {
+          title: z.string().min(1),
+          note: z.string().optional().describe('optional context for the goal'),
+          tasks: z.array(taskInputSchema).optional().describe('initial tasks: strings, or {title, note}')
+        }
+      },
+      async ({ title, note, tasks }) => {
+        const store = this.getTaskStore()
+        if (!store) return noTasks()
+        return text(store.addGoal({ title, note, tasks }, termId))
+      }
+    )
+
+    server.registerTool(
+      'tasks_add_tasks',
+      {
+        description: 'Add tasks under an existing goal. Returns the new task ids.',
+        inputSchema: {
+          goalId: z.string().min(1),
+          tasks: z.array(taskInputSchema).min(1).describe('strings, or {title, note}')
+        }
+      },
+      async ({ goalId, tasks }) => {
+        const store = this.getTaskStore()
+        if (!store) return noTasks()
+        return text(store.addTasks(goalId, tasks, termId))
+      }
+    )
+
+    server.registerTool(
+      'tasks_set_status',
+      {
+        description: 'Set a task\'s status as you work: doing when you start it, done when finished, todo to reopen.',
+        inputSchema: { id: z.string().min(1).describe('a task id'), status: taskStatusSchema }
+      },
+      async ({ id, status }) => {
+        const store = this.getTaskStore()
+        if (!store) return noTasks()
+        return text(store.updateTask(id, { status }, termId))
+      }
+    )
+
+    server.registerTool(
+      'tasks_remove',
+      {
+        description: 'Remove goals and/or tasks by id (removing a goal removes its tasks). Only when they are truly no longer relevant.',
+        inputSchema: { ids: z.array(z.string()).min(1).describe('goal or task ids') }
+      },
+      async ({ ids }) => {
+        const store = this.getTaskStore()
+        if (!store) return noTasks()
+        return text(store.remove(ids, termId))
       }
     )
 

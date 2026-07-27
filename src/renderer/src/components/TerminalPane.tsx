@@ -4,6 +4,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useEffect, useRef, useState } from 'react'
 import { attachTermData, getTermTailText, useTerminalStore, type PaneRec } from '../stores/terminalStore'
+import { ResumeBar } from './ResumeBar'
 import { fmtCost, fmtTokens } from './usageFormat'
 
 const TERM_THEME = {
@@ -30,8 +31,10 @@ export function TerminalPane({
   const removePane = useTerminalStore((s) => s.removePane)
   const addPane = useTerminalStore((s) => s.addPane)
   const usage = useTerminalStore((s) => (pane.termId ? s.usage[pane.termId] : undefined))
+  const resume = useTerminalStore((s) => (pane.termId ? s.resume[pane.termId] : undefined))
   const billingReal = useTerminalStore((s) => s.billingReal)
   const [showLog, setShowLog] = useState(false)
+  const [showQueue, setShowQueue] = useState(false)
 
   useEffect(() => {
     if (!hostRef.current || startedRef.current) return
@@ -165,7 +168,10 @@ export function TerminalPane({
         </div>
       )}
       <div className="terminal-pane-body" ref={hostRef} />
-      {usage && pane.status !== 'exited' && (
+      {pane.termId && (
+        <ResumeBar termId={pane.termId} forceOpen={showQueue} onClose={() => setShowQueue(false)} />
+      )}
+      {usage && pane.status !== 'exited' && !resume?.limited && (
         <div
           className="usage-strip"
           title={
@@ -191,9 +197,17 @@ export function TerminalPane({
               {fmtCost(usage.costUsd)}
             </span>
           )}
+          <span className="spacer" />
+          <button
+            className="link-button"
+            onClick={() => setShowQueue((v) => !v)}
+            title="Queue prompts to run now, or automatically after your usage limit resets"
+          >
+            ⧗ Queue
+          </button>
         </div>
       )}
-      {pane.status === 'exited' && (
+      {pane.status === 'exited' && !resume?.limited && (
         <div className="terminal-pane-exitbar">
           <div className="exitbar-row">
             <span className={exitedEarly ? 'exit-bad' : 'exit-ok'}>

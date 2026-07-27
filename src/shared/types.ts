@@ -42,6 +42,76 @@ export interface GraphState {
   events: GraphEvent[]
 }
 
+// ---- projects (app-managed workspaces) ------------------------------------
+export interface ProjectInfo {
+  id: string
+  name: string
+  /** absolute path to this project's folder under the app's user-data dir */
+  root: string
+  createdAt: string
+  lastOpenedAt: string
+}
+
+export interface ProjectsState {
+  projects: ProjectInfo[]
+  activeId: string | null
+}
+
+// ---- usage-limit auto-resume ----------------------------------------------
+export interface ResumeState {
+  termId: string
+  /** true while waiting for a hit usage limit to reset */
+  limited: boolean
+  /** epoch ms when the limit resets, or null if unknown */
+  resetAt: number | null
+  /** human-readable reset description, e.g. "session limit · resets 3:45pm (America/New_York)" */
+  resetLabel: string | null
+  /** prompts waiting to be sent, in order (drained when usage is available) */
+  queue: string[]
+}
+
+// ---- goals & tasks --------------------------------------------------------
+export type TaskStatus = 'todo' | 'doing' | 'done'
+
+export interface Task {
+  id: string
+  title: string
+  status: TaskStatus
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Goal {
+  id: string
+  title: string
+  note?: string
+  tasks: Task[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskEvent {
+  ts: string
+  /** the terminal that made the change; null = edited by the human in the UI */
+  termId: string | null
+  tool: string
+  summary: string
+}
+
+export interface TasksState {
+  version: 1
+  projectRoot: string
+  updatedAt: string
+  goals: Goal[]
+  events: TaskEvent[]
+}
+
+export interface TasksChangedPayload {
+  tasks: TasksState
+  event: TaskEvent | null
+}
+
 export interface AgentInfo {
   name: string
   description?: string
