@@ -28,7 +28,7 @@ const T = (n) => `2026-07-27T10:0${n}:00.000Z`
 const task = (id, title, status, updatedAt, updatedBy) => ({
   id, title, status, createdAt: T(0), updatedAt, updatedBy
 })
-const goal = (id, title, tasks, updatedAt) => ({ id, title, tasks, createdAt: T(0), updatedAt })
+const goal = (id, title, tasks, updatedAt, status = 'active') => ({ id, title, status, tasks, createdAt: T(0), updatedAt })
 const state = (goals, events = [], removed = []) => ({
   version: 1, projectRoot: '/local', updatedAt: T(9), goals, events, removed
 })
@@ -95,6 +95,14 @@ const findGoal = (s, id) => s.goals.find((g) => g.id === id)
   const ba = mergeTasksState(b, a)
   const ids = (s) => s.goals.flatMap((g) => [g.id, ...g.tasks.map((t) => t.id)]).sort().join(',')
   ok(ids(ab) === ids(ba), 'merge order-independent on membership')
+}
+
+// 8. Goal completion propagates: whoever marked it done most recently wins.
+{
+  const mine = state([goal('g1', 'G', [], T(2), 'active')])
+  const theirs = state([goal('g1', 'G', [], T(5), 'done')])
+  ok(findGoal(mergeTasksState(mine, theirs), 'g1').status === 'done', 'newer goal-completion wins the merge')
+  ok(findGoal(mergeTasksState(theirs, mine), 'g1').status === 'done', 'goal status merge is order-independent')
 }
 
 rmSync(out, { force: true })

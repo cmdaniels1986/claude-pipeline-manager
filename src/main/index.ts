@@ -2,9 +2,10 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CreateTermOptions, Diagnostics, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
+import type { CreateTermOptions, Diagnostics, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
+import { computeChangedNodes } from './graph/gitScope'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { ProjectManager } from './projects/ProjectManager'
@@ -47,7 +48,7 @@ A live shared pipeline graph is visible to a human in real time; keep it current
 # Goals & Tasks
 A human sees a live goals/tasks board (shared with you via the "graph" MCP server's task_* tools). Keep it current so they can follow your progress.
 - When you take on a multi-step piece of work, capture it: tasks_add_goal (an objective, optionally with an initial task list) and tasks_add_tasks (more tasks under a goal).
-- tasks_set_status as you go: doing when you start a task, done when it's finished. This is the main signal the human watches — keep it honest.
+- tasks_set_status as you go: doing when you start a task, done when it's finished. This is the main signal the human watches — keep it honest. Passing a goal id (with done) marks the whole goal complete once its objective is met.
 - tasks_get to see the current board; tasks_remove only when an item is genuinely no longer relevant. The human also edits this board, so don't wipe their entries.
 `
 
@@ -227,6 +228,12 @@ function registerIpc(): void {
     usageTracker.untrack(termId)
     closeTerminalWindow(termId)
   })
+  ipcMain.handle('term:setLabel', (_e, { termId, label }: { termId: string; label: string }) => {
+    ptyManager.setLabel(termId, label)
+  })
+  ipcMain.handle('term:setColor', (_e, { termId, color }: { termId: string; color: string | null }) => {
+    ptyManager.setColor(termId, color)
+  })
   ipcMain.handle('term:list', () => ptyManager.list())
   // live terminals the main window should re-adopt after a renderer reload
   // (idle/sleep can reload the dev page); excludes ones hosted in a pop-out window
@@ -319,6 +326,15 @@ function registerIpc(): void {
   ipcMain.handle('graph:openWindow', () => {
     openGraphWindow()
   })
+  ipcMain.handle('graph:setOwner', (_e, { id, owner }: { id: string; owner: string }) => {
+    graphStore?.setOwner(id, owner, null)
+  })
+  // scope the graph to git changes — best-effort, local, no tokens
+  ipcMain.handle('graph:changedNodes', () =>
+    graphStore
+      ? computeChangedNodes(graphStore.get().nodes)
+      : { changed: [], branch: null, repos: 0, reason: 'No active project.' }
+  )
   ipcMain.handle('graph:export', async () => {
     if (!graphStore) return { ok: false, error: 'No active project.' }
     const graph = graphStore.get()
@@ -341,8 +357,8 @@ function registerIpc(): void {
   ipcMain.handle('tasks:addGoal', (_e, p: { title: string; note?: string; scope?: TaskScope }) =>
     taskHub?.addGoal({ title: p.title, note: p.note }, null, p.scope ?? 'mine')
   )
-  ipcMain.handle('tasks:updateGoal', (_e, p: { goalId: string; title?: string; note?: string }) =>
-    taskHub?.updateGoal(p.goalId, { title: p.title, note: p.note }, null)
+  ipcMain.handle('tasks:updateGoal', (_e, p: { goalId: string; title?: string; note?: string; status?: GoalStatus }) =>
+    taskHub?.updateGoal(p.goalId, { title: p.title, note: p.note, status: p.status }, null)
   )
   ipcMain.handle('tasks:addTask', (_e, p: { goalId: string; title: string }) =>
     taskHub?.addTasks(p.goalId, [p.title], null)

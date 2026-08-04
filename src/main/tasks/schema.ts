@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const taskStatusSchema = z.enum(['todo', 'doing', 'done'])
+export const goalStatusSchema = z.enum(['active', 'done'])
 
 export const taskSchema = z.object({
   id: z.string().min(1),
@@ -15,6 +16,8 @@ export const taskSchema = z.object({
 export const goalSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
+  // default keeps tasks.json files written before goal completion existed valid
+  status: goalStatusSchema.optional().default('active'),
   note: z.string().optional(),
   tasks: z.array(taskSchema),
   createdAt: z.string(),

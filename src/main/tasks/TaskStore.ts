@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { basename, dirname, join } from 'path'
-import type { Goal, Task, TaskEvent, TaskStatus, TasksState, TaskTombstone } from '../../shared/types'
+import type { Goal, GoalStatus, Task, TaskEvent, TaskStatus, TasksState, TaskTombstone } from '../../shared/types'
 import { mergeTasksState } from './merge'
 import { normalizeTaskInput, tasksStateSchema, type TaskInput } from './schema'
 
@@ -117,6 +117,7 @@ export class TaskStore extends EventEmitter {
     const goal: Goal = {
       id: shortId('g'),
       title: input.title,
+      status: 'active',
       note: input.note,
       tasks: [],
       createdAt: ts,
@@ -134,14 +135,19 @@ export class TaskStore extends EventEmitter {
 
   updateGoal(
     goalId: string,
-    patch: { title?: string; note?: string },
+    patch: { title?: string; note?: string; status?: GoalStatus },
     termId: string | null
   ): { ok: boolean; error?: string } {
     const goal = this.state.goals.find((g) => g.id === goalId)
     if (!goal) return { ok: false, error: `No goal with id "${goalId}"` }
     if (patch.title !== undefined) goal.title = patch.title
     if (patch.note !== undefined) goal.note = patch.note || undefined
-    this.commit({ ts: now(), termId, by: this.who(termId), tool: 'update_goal', summary: `goal "${goal.title}" edited` }, goal)
+    if (patch.status !== undefined) goal.status = patch.status
+    const summary =
+      patch.status !== undefined
+        ? `goal "${goal.title}" ${patch.status === 'done' ? 'completed ✓' : 'reopened'}`
+        : `goal "${goal.title}" edited`
+    this.commit({ ts: now(), termId, by: this.who(termId), tool: 'update_goal', summary }, goal)
     return { ok: true }
   }
 

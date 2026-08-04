@@ -15,6 +15,7 @@ export const graphNodeSchema = z.object({
       path: z.string().optional(),
       description: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      owner: z.string().optional(),
       placeholder: z.boolean().optional()
     })
     .default({}),
@@ -53,7 +54,8 @@ export const nodeInputSchema = z.object({
   statusNote: z.string().optional(),
   path: z.string().optional(),
   description: z.string().optional(),
-  tags: z.array(z.string()).optional()
+  tags: z.array(z.string()).optional(),
+  owner: z.string().optional()
 })
 
 export const edgeInputSchema = z.object({

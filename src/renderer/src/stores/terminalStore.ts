@@ -12,6 +12,8 @@ export interface PaneRec {
   dangerous?: boolean
   termId?: string
   label: string
+  /** true once the user has hand-named this tab, so setLive won't overwrite it */
+  renamed?: boolean
   status: 'starting' | 'live' | 'exited'
   exitCode?: number
 }
@@ -34,6 +36,10 @@ interface TerminalStore {
   }) => void
   adoptPane: (opts: { termId: string; label: string; cwd: string; color?: string }) => void
   setActive: (paneId: string) => void
+  /** give a tab a custom name (right-click → rename) */
+  renamePane: (paneId: string, label: string) => void
+  /** change a tab's accent color (undefined clears it) */
+  recolorPane: (paneId: string, color: string | undefined) => void
   setLive: (paneId: string, termId: string, label: string) => void
   setExited: (termId: string, exitCode: number) => void
   /** a session was relaunched (--resume) after a usage limit — flip it back to live */
@@ -103,9 +109,20 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       }
     }),
   setActive: (paneId) => set({ activePaneId: paneId }),
+  renamePane: (paneId, label) =>
+    set((s) => ({
+      panes: s.panes.map((p) => (p.paneId === paneId ? { ...p, label, renamed: true } : p))
+    })),
+  recolorPane: (paneId, color) =>
+    set((s) => ({
+      panes: s.panes.map((p) => (p.paneId === paneId ? { ...p, color } : p))
+    })),
   setLive: (paneId, termId, label) =>
     set((s) => ({
-      panes: s.panes.map((p) => (p.paneId === paneId ? { ...p, termId, label, status: 'live' as const } : p))
+      panes: s.panes.map((p) =>
+        // don't clobber a name the user set before the session went live
+        p.paneId === paneId ? { ...p, termId, label: p.renamed ? p.label : label, status: 'live' as const } : p
+      )
     })),
   setExited: (termId, exitCode) =>
     set((s) => ({

@@ -64,11 +64,23 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
     void window.api.tasksMoveGoal({ goalId: goal.id, scope: to })
   }
 
+  const toggleGoalDone = (goal: Goal): void => {
+    void window.api.tasksUpdateGoal({ goalId: goal.id, status: goal.status === 'done' ? 'active' : 'done' })
+  }
+
   const goalRow = (goal: Goal, scope: TaskScope): React.JSX.Element => {
     const done = goal.tasks.filter((t) => t.status === 'done').length
+    const complete = goal.status === 'done'
     return (
-      <div key={goal.id} className="goal">
+      <div key={goal.id} className={`goal${complete ? ' goal-done' : ''}`}>
         <div className="goal-head">
+          <button
+            className={`goal-check goal-check-${goal.status}`}
+            onClick={() => toggleGoalDone(goal)}
+            title={complete ? 'Completed — click to reopen' : 'Mark goal complete'}
+          >
+            {complete ? '✓' : '○'}
+          </button>
           {editing?.id === goal.id ? (
             <input
               className="goal-edit"

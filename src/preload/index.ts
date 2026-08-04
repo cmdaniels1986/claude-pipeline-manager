@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AgentInfo,
+  ChangedNodesResult,
   CreateTermOptions,
   Diagnostics,
+  GoalStatus,
   GraphChangedPayload,
   GraphState,
   ProjectInfo,
@@ -34,6 +36,10 @@ const api = {
   termResize: (termId: string, cols: number, rows: number): void =>
     ipcRenderer.send('term:resize', { termId, cols, rows }),
   termDispose: (termId: string): Promise<void> => ipcRenderer.invoke('term:dispose', termId),
+  termSetLabel: (termId: string, label: string): Promise<void> =>
+    ipcRenderer.invoke('term:setLabel', { termId, label }),
+  termSetColor: (termId: string, color: string | null): Promise<void> =>
+    ipcRenderer.invoke('term:setColor', { termId, color }),
   termList: (): Promise<TermInfo[]> => ipcRenderer.invoke('term:list'),
   reconcileTerminals: (): Promise<TermInfo[]> => ipcRenderer.invoke('term:reconcile'),
   termClaim: (termId: string): Promise<void> => ipcRenderer.invoke('term:claim', termId),
@@ -69,6 +75,9 @@ const api = {
   graphGet: (): Promise<GraphState | null> => ipcRenderer.invoke('graph:get'),
   graphSetPositions: (positions: { id: string; position: { x: number; y: number } }[]): Promise<void> =>
     ipcRenderer.invoke('graph:setPositions', positions),
+  graphSetOwner: (id: string, owner: string): Promise<void> =>
+    ipcRenderer.invoke('graph:setOwner', { id, owner }),
+  graphChangedNodes: (): Promise<ChangedNodesResult> => ipcRenderer.invoke('graph:changedNodes'),
   openGraphWindow: (): Promise<void> => ipcRenderer.invoke('graph:openWindow'),
   exportGraph: (): Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }> =>
     ipcRenderer.invoke('graph:export'),
@@ -78,7 +87,7 @@ const api = {
   tasksGet: (): Promise<TasksSnapshot | null> => ipcRenderer.invoke('tasks:get'),
   tasksAddGoal: (p: { title: string; note?: string; scope?: TaskScope }): Promise<unknown> =>
     ipcRenderer.invoke('tasks:addGoal', p),
-  tasksUpdateGoal: (p: { goalId: string; title?: string; note?: string }): Promise<unknown> =>
+  tasksUpdateGoal: (p: { goalId: string; title?: string; note?: string; status?: GoalStatus }): Promise<unknown> =>
     ipcRenderer.invoke('tasks:updateGoal', p),
   tasksAddTask: (p: { goalId: string; title: string }): Promise<unknown> => ipcRenderer.invoke('tasks:addTask', p),
   tasksUpdateTask: (p: { taskId: string; title?: string; status?: TaskStatus; note?: string }): Promise<unknown> =>

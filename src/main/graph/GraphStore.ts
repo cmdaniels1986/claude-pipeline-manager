@@ -62,6 +62,7 @@ export class GraphStore extends EventEmitter {
         if (input.path !== undefined) existing.meta.path = input.path
         if (input.description !== undefined) existing.meta.description = input.description
         if (input.tags !== undefined) existing.meta.tags = input.tags
+        if (input.owner !== undefined) existing.meta.owner = input.owner
         delete existing.meta.placeholder
       } else {
         this.state.nodes.push(this.makeNode(input))
@@ -130,6 +131,23 @@ export class GraphStore extends EventEmitter {
     return { ok: true }
   }
 
+  /** Set (or clear, with '') a node's owner. Used by the human via the UI and by
+   *  agents via graph_upsert_nodes. */
+  setOwner(id: string, owner: string, termId: string | null): { ok: boolean; error?: string } {
+    const node = this.state.nodes.find((n) => n.id === id)
+    if (!node) return { ok: false, error: `No node with id "${id}"` }
+    const trimmed = owner.trim()
+    if (trimmed) node.meta.owner = trimmed
+    else delete node.meta.owner
+    this.commit({
+      ts: now(),
+      termId,
+      tool: 'graph_set_owner',
+      summary: trimmed ? `${id} owner → ${trimmed}` : `${id} owner cleared`
+    })
+    return { ok: true }
+  }
+
   remove(nodeIds: string[], edgeIds: string[], termId: string | null): { removed: number } {
     const nodeSet = new Set(nodeIds)
     const edgeSet = new Set(edgeIds)
@@ -180,7 +198,8 @@ export class GraphStore extends EventEmitter {
         ...meta,
         ...(input.path !== undefined ? { path: input.path } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.tags !== undefined ? { tags: input.tags } : {})
+        ...(input.tags !== undefined ? { tags: input.tags } : {}),
+        ...(input.owner !== undefined ? { owner: input.owner } : {})
       },
       position: null
     }

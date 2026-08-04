@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { PROMPT_TEMPLATES } from './promptTemplates'
 
 export interface Provenance {
@@ -10,22 +11,28 @@ export function NodeContextMenu({
   y,
   nodeId,
   path,
+  owner,
   lastTouched,
   onPick,
   onOpenFile,
   onReveal,
+  onSetOwner,
   onClose
 }: {
   x: number
   y: number
   nodeId: string
   path?: string
+  owner?: string
   lastTouched?: Provenance | null
   onPick: (promptText: string) => void
   onOpenFile: () => void
   onReveal: () => void
+  onSetOwner: (owner: string) => void
   onClose: () => void
 }): React.JSX.Element {
+  const [ownerText, setOwnerText] = useState(owner ?? '')
+
   return (
     <>
       <div className="context-menu-backdrop" onClick={onClose} onContextMenu={onClose} />
@@ -47,6 +54,31 @@ export function NodeContextMenu({
         <button disabled={!path} onClick={onReveal}>
           📂 Reveal in folder
         </button>
+
+        <div className="context-menu-divider" />
+
+        <div className="ctx-owner">
+          <span className="ctx-owner-label">👤 owner</span>
+          <input
+            className="ctx-owner-input"
+            value={ownerText}
+            onChange={(e) => setOwnerText(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSetOwner(ownerText)
+              else if (e.key === 'Escape') onClose()
+            }}
+            placeholder="unassigned"
+            maxLength={60}
+          />
+          <button
+            className="ctx-owner-save"
+            onClick={() => onSetOwner(ownerText)}
+            title="Save owner (Enter)"
+          >
+            ✓
+          </button>
+        </div>
 
         <div className="context-menu-divider" />
 

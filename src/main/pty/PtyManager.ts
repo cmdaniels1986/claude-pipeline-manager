@@ -9,6 +9,8 @@ interface TermRec {
   cwd: string
   agentName?: string
   color?: string
+  /** user-chosen tab name (right-click → rename); overrides the derived label */
+  customLabel?: string
   alive: boolean
   /** original launch options, kept so the session can be relaunched with --resume */
   opts: CreateTermOptions
@@ -63,6 +65,19 @@ export class PtyManager {
 
   isAlive(termId: string): boolean {
     return this.terms.get(termId)?.alive ?? false
+  }
+
+  /** Rename a terminal's tab. Persists so the name survives a renderer reload
+   *  (reconcile re-derives tabs from here) and pop-out/back. */
+  setLabel(termId: string, label: string): void {
+    const rec = this.terms.get(termId)
+    if (rec) rec.customLabel = label.trim() || undefined
+  }
+
+  /** Recolor a terminal's tab; null/undefined clears back to no accent. */
+  setColor(termId: string, color: string | null | undefined): void {
+    const rec = this.terms.get(termId)
+    if (rec) rec.color = color ?? undefined
   }
 
   private spawnClaude(termId: string, opts: CreateTermOptions, resume: boolean): IPty {
@@ -148,9 +163,10 @@ export class PtyManager {
 
   private toInfo(rec: TermRec): TermInfo {
     const cwdBase = rec.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? rec.cwd
+    const derived = rec.agentName ? `${rec.agentName} · ${cwdBase}` : `claude · ${cwdBase}`
     return {
       termId: rec.termId,
-      label: rec.agentName ? `${rec.agentName} · ${cwdBase}` : `claude · ${cwdBase}`,
+      label: rec.customLabel ?? derived,
       cwd: rec.cwd,
       agentName: rec.agentName,
       color: rec.color,

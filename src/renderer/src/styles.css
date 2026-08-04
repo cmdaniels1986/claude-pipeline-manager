@@ -470,6 +470,34 @@ button.toggled {
   align-items: center;
   gap: 8px;
 }
+.goal-check {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+  box-shadow: none;
+}
+.goal-check-done {
+  color: var(--ok);
+  border-color: rgba(47, 230, 166, 0.6);
+  background: rgba(47, 230, 166, 0.1);
+}
+.goal-done {
+  opacity: 0.65;
+}
+.goal-done .goal-title {
+  color: var(--text-mute);
+  text-decoration: line-through;
+}
 .goal-title {
   font-weight: 600;
   font-size: 13px;
@@ -627,6 +655,18 @@ button.toggled {
 }
 .tab-close {
   padding: 0 3px;
+}
+/* colored tabs inherit the accent as text color — keep the badge + close legible */
+.tab.colored .tab-close {
+  color: inherit;
+  opacity: 0.75;
+}
+.tab.colored .tab-close:hover {
+  opacity: 1;
+}
+.tab.active.colored .tab-tokens {
+  color: inherit;
+  background: rgba(0, 0, 0, 0.28);
 }
 .tab-new {
   border: none;
@@ -960,6 +1000,112 @@ button.danger:hover {
 .graph-view {
   height: 100%;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+/* graph controls bar (search + status filter + health pills + git changes) */
+.graph-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-wrap: wrap;
+}
+.graph-search {
+  flex: 1 1 200px;
+  min-width: 140px;
+  max-width: 320px;
+  padding: 5px 9px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.graph-search:focus {
+  border-color: var(--accent);
+}
+.graph-status-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-dim);
+  box-shadow: none;
+}
+.status-chip:hover {
+  color: var(--text);
+  background: rgba(47, 230, 214, 0.06);
+}
+.status-chip.on {
+  color: var(--text);
+  border-color: var(--chip);
+  background: color-mix(in srgb, var(--chip) 16%, transparent);
+}
+.status-chip .chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 5px currentColor;
+}
+.health-pill,
+.graph-tool-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  white-space: nowrap;
+  box-shadow: none;
+}
+.health-pill:hover,
+.graph-tool-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.health-pill.on,
+.graph-tool-btn.on {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.health-pill.danger {
+  color: #ff9db0;
+  border-color: rgba(255, 77, 109, 0.5);
+}
+.health-pill.danger.on {
+  color: #12060a;
+  background: #ff4d6d;
+  border-color: #ff4d6d;
+}
+.graph-tool-btn:disabled {
+  opacity: 0.6;
+}
+/* nodes/edges hidden by an active filter or focus */
+.react-flow__node.filtered-out {
+  opacity: 0.1;
+  pointer-events: none;
 }
 .legend {
   display: flex;
@@ -1051,6 +1197,78 @@ button.danger:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text);
+}
+.pipeline-node-owner {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pipeline-node-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.node-mark {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+.node-mark.mark-changed {
+  color: #7ee787;
+}
+.node-mark.mark-cycle {
+  color: #ff4d6d;
+}
+.node-mark.mark-deadend {
+  color: #ff9a3d;
+}
+.node-mark.mark-orphan {
+  color: var(--text-dim);
+}
+.pipeline-node.is-changed {
+  outline: 1.5px solid rgba(126, 231, 135, 0.55);
+  outline-offset: 2px;
+}
+/* owner editor row in the node context menu */
+.ctx-owner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px 6px;
+}
+.ctx-owner-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ctx-owner-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.ctx-owner-input:focus {
+  border-color: var(--accent);
+}
+.ctx-owner-save {
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  box-shadow: none;
 }
 
 /* impact highlighting */
@@ -1145,6 +1363,50 @@ button.danger:hover {
   height: 1px;
   background: var(--line);
   margin: 4px 0;
+}
+.tab-rename-input {
+  margin: 0 6px 4px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.tab-rename-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(47, 230, 214, 0.15);
+}
+.tab-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+.tab-swatch {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  box-shadow: none;
+}
+.tab-swatch:hover {
+  transform: scale(1.12);
+}
+.tab-swatch.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+.tab-swatch-clear {
+  background: var(--bg);
+  border: 1px dashed var(--line-strong);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
 }
 .context-menu button {
   border: none;

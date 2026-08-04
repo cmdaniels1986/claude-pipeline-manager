@@ -72,6 +72,27 @@ hub.setSharedPath(share)
   ok(s.shared !== null && s.shared.goals.length >= 1, 're-enabling loads the existing shared file')
 }
 
+// 6. Goal completion: new goals start active; updateGoal + setStatus mark them done/reopen.
+{
+  const g = hub.addGoal({ title: 'Ship it' }, null, 'mine')
+  ok(hub.snapshot().mine.goals.find((x) => x.id === g.goalId).status === 'active', 'new goal starts active')
+
+  hub.updateGoal(g.goalId, { status: 'done' }, null)
+  ok(hub.snapshot().mine.goals.find((x) => x.id === g.goalId).status === 'done', 'updateGoal marks a goal done')
+
+  // setStatus is polymorphic (used by the MCP tool): a goal id + done completes the goal.
+  hub.updateGoal(g.goalId, { status: 'active' }, null)
+  const r = hub.setStatus(g.goalId, 'done', 't1')
+  ok(r.ok && r.kind === 'goal', 'setStatus routes a goal id to goal completion')
+  ok(hub.snapshot().mine.goals.find((x) => x.id === g.goalId).status === 'done', 'setStatus(goalId, done) completes the goal')
+
+  // a task id still routes to the task.
+  const { taskIds } = hub.addTasks(g.goalId, ['a step'], null)
+  const rt = hub.setStatus(taskIds[0], 'done', 't1')
+  ok(rt.ok && rt.kind === 'task', 'setStatus routes a task id to the task')
+  ok(hub.snapshot().mine.goals.find((x) => x.id === g.goalId).tasks[0].status === 'done', 'setStatus(taskId, done) completes the task')
+}
+
 hub.dispose()
 rmSync(out, { force: true })
 rmSync(root, { recursive: true, force: true })

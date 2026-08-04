@@ -96,6 +96,7 @@ export class GraphMcpServer {
           nodes: g.nodes.map((n) => {
             const o: Record<string, string> = { id: n.id, type: n.type, status: n.status }
             if (n.meta.path) o.path = n.meta.path
+            if (n.meta.owner) o.owner = n.meta.owner
             if (n.statusNote) o.note = n.statusNote
             return o
           }),
@@ -120,7 +121,7 @@ export class GraphMcpServer {
                 nodeTypeSchema.options.join('|') +
                 ', status ' +
                 nodeStatusSchema.options.join('|') +
-                ', plus optional label, statusNote, path, description, tags'
+                ', plus optional label, statusNote, path, description, tags, owner'
             )
         }
       },
@@ -191,7 +192,7 @@ export class GraphMcpServer {
       'tasks_get',
       {
         description:
-          'Current goals & their tasks, in two lists: "mine" (private to this machine) and "shared" (synced with a coworker; null if this project has no shared list). Each goal has {id,title} with tasks {id,title,status} (todo|doing|done).'
+          'Current goals & their tasks, in two lists: "mine" (private to this machine) and "shared" (synced with a coworker; null if this project has no shared list). Each goal has {id,title,status} (status active|done) with tasks {id,title,status} (todo|doing|done).'
       },
       async () => {
         const store = this.getTaskStore()
@@ -201,6 +202,7 @@ export class GraphMcpServer {
           s.goals.map((g) => ({
             id: g.id,
             title: g.title,
+            status: g.status,
             ...(g.note ? { note: g.note } : {}),
             tasks: g.tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))
           }))
@@ -246,13 +248,14 @@ export class GraphMcpServer {
     server.registerTool(
       'tasks_set_status',
       {
-        description: 'Set a task\'s status as you work: doing when you start it, done when finished, todo to reopen.',
-        inputSchema: { id: z.string().min(1).describe('a task id'), status: taskStatusSchema }
+        description:
+          "Set status as you work: doing when you start a task, done when finished, todo to reopen. Pass a GOAL id with done to mark the whole goal complete (or todo/doing to reopen it).",
+        inputSchema: { id: z.string().min(1).describe('a task id, or a goal id to complete/reopen the goal'), status: taskStatusSchema }
       },
       async ({ id, status }) => {
         const store = this.getTaskStore()
         if (!store) return noTasks()
-        return text(store.updateTask(id, { status }, termId))
+        return text(store.setStatus(id, status, termId))
       }
     )
 

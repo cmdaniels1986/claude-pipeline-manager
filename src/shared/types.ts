@@ -6,6 +6,8 @@ export interface GraphNodeMeta {
   path?: string
   description?: string
   tags?: string[]
+  /** who owns this artifact (a name/team) — human- or agent-set, searchable */
+  owner?: string
   placeholder?: boolean
 }
 
@@ -76,6 +78,8 @@ export interface ResumeState {
 
 // ---- goals & tasks --------------------------------------------------------
 export type TaskStatus = 'todo' | 'doing' | 'done'
+/** whether a whole goal has been completed */
+export type GoalStatus = 'active' | 'done'
 
 export interface Task {
   id: string
@@ -91,6 +95,8 @@ export interface Task {
 export interface Goal {
   id: string
   title: string
+  /** 'done' when the human/agent has marked the whole goal complete */
+  status: GoalStatus
   note?: string
   tasks: Task[]
   createdAt: string
@@ -203,6 +209,18 @@ export interface Diagnostics {
 export interface GraphChangedPayload {
   graph: GraphState
   event: GraphEvent | null
+}
+
+/** result of scoping the graph to files changed in the working tree / branch */
+export interface ChangedNodesResult {
+  /** node ids whose source file is modified in a git repo */
+  changed: string[]
+  /** current branch name (of the first repo found), if determinable */
+  branch: string | null
+  /** how many distinct git repos the node source files span */
+  repos: number
+  /** set when git couldn't run or no node had a resolvable source file */
+  reason?: string
 }
 
 export interface UpdateStatus {

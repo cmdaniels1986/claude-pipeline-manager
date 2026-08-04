@@ -1,6 +1,7 @@
 import { join } from 'path'
 import type {
   Goal,
+  GoalStatus,
   TaskEvent,
   TaskScope,
   TasksChangedPayload,
@@ -106,12 +107,27 @@ export class TaskHub {
 
   updateGoal(
     goalId: string,
-    patch: { title?: string; note?: string },
+    patch: { title?: string; note?: string; status?: GoalStatus },
     termId: string | null
   ): { ok: boolean; error?: string } {
     const store = this.storeForGoal(goalId)
     if (!store) return { ok: false, error: `No goal with id "${goalId}"` }
     return store.updateGoal(goalId, patch, termId)
+  }
+
+  /** Set status for an id that may be a task OR a goal (used by the MCP
+   *  tasks_set_status tool so agents can mark a whole goal complete). A goal
+   *  maps 'done' → completed and anything else → active. */
+  setStatus(
+    id: string,
+    status: TaskStatus,
+    termId: string | null
+  ): { ok: boolean; error?: string; kind?: 'task' | 'goal' } {
+    if (this.storeForTask(id)) return { ...this.updateTask(id, { status }, termId), kind: 'task' }
+    if (this.storeForGoal(id)) {
+      return { ...this.updateGoal(id, { status: status === 'done' ? 'done' : 'active' }, termId), kind: 'goal' }
+    }
+    return { ok: false, error: `No goal or task with id "${id}"` }
   }
 
   addTasks(goalId: string, inputs: TaskInput[], termId: string | null): { taskIds: string[]; error?: string } {
