@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { AGENT_COLORS } from '../../../shared/types'
+import { useGraphStore } from '../graph/graphStore'
+import { useTaskStore } from '../stores/taskStore'
 import { useTerminalStore, type PaneRec } from '../stores/terminalStore'
+import { collectActivity, describeTerminal } from './terminalActivity'
 import { TerminalPane } from './TerminalPane'
 import { usageBadge } from './usageFormat'
 
@@ -57,6 +60,11 @@ function tabStyle(color: string | undefined, active: boolean): React.CSSProperti
 export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): React.JSX.Element {
   const { panes, activePaneId, usage, billingReal, setActive, removePane, releasePane, renamePane, recolorPane } =
     useTerminalStore()
+  // events the app recorded for each terminal (graph + goals/tasks), for the
+  // "what did this terminal work on" tab tooltip
+  const graphEvents = useGraphStore((s) => s.graph?.events)
+  const mineEvents = useTaskStore((s) => s.mine?.events)
+  const sharedEvents = useTaskStore((s) => s.shared?.events)
   const [menu, setMenu] = useState<{ x: number; y: number; paneId: string } | null>(null)
   const [renameText, setRenameText] = useState('')
   const renameRef = useRef<HTMLInputElement>(null)
@@ -110,11 +118,14 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
     )
   }
 
+  const taskEvents = [...(mineEvents ?? []), ...(sharedEvents ?? [])]
+
   return (
     <div className="terminal-tabs">
       <div className="tab-bar">
         {panes.map((pane) => {
           const active = pane.paneId === activePaneId
+          const workedOn = describeTerminal(pane, collectActivity(pane.termId, graphEvents, taskEvents))
           return (
             <div
               key={pane.paneId}
@@ -137,7 +148,9 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
               }}
             >
               <span className="tab-dot" style={{ background: STATUS_DOT[pane.status] }} />
-              <span className="tab-label">{pane.label}</span>
+              <span className="tab-label" title={workedOn}>
+                {pane.label}
+              </span>
               {pane.termId && usage[pane.termId] && (
                 <span className="tab-tokens" title="Session cost so far (≈ = notional; subscription is flat-rate)">
                   {usageBadge(usage[pane.termId], billingReal)}
