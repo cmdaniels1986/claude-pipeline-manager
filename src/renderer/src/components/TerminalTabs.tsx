@@ -147,7 +147,11 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
                 if (outside) popOut(pane)
               }}
             >
-              <span className="tab-dot" style={{ background: STATUS_DOT[pane.status] }} />
+              {pane.busy && pane.status === 'live' ? (
+                <span className="tab-spinner" title="Claude is working…" />
+              ) : (
+                <span className="tab-dot" style={{ background: STATUS_DOT[pane.status] }} />
+              )}
               <span className="tab-label" title={workedOn}>
                 {pane.label}
               </span>

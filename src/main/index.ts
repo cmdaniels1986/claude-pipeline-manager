@@ -9,6 +9,7 @@ import { computeChangedNodes } from './graph/gitScope'
 import { GraphMcpServer } from './mcp/GraphMcpServer'
 import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { ProjectManager } from './projects/ProjectManager'
+import { ActivityMonitor } from './pty/activityDetect'
 import { PtyManager } from './pty/PtyManager'
 import { TaskHub } from './tasks/TaskHub'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
@@ -55,6 +56,7 @@ A human sees a live goals/tasks board (shared with you via the "graph" MCP serve
 let claudeInfo: ClaudeInfo
 let ptyManager: PtyManager
 let resumeManager: ResumeManager
+let activityMonitor: ActivityMonitor | null = null
 let mcpServer: GraphMcpServer
 /** which renderer window currently hosts each terminal's UI */
 const termHosts = new Map<string, Electron.WebContents>()
@@ -469,11 +471,19 @@ app.whenReady().then(async () => {
     onData: (termId, data) => {
       sendToTermHost(termId, 'term:data', { termId, data })
       resumeManager?.observe(termId, data)
+      activityMonitor?.observe(termId, data)
     },
     onExit: (termId, exitCode) => {
       sendToTermHost(termId, 'term:exit', { termId, exitCode })
       resumeManager?.onExit(termId)
+      activityMonitor?.end(termId)
     }
+  })
+
+  // glanceable "Claude is working here" state for each tab, scraped from the
+  // TUI's "esc to interrupt" hint (see activityDetect.ts)
+  activityMonitor = new ActivityMonitor({
+    onChange: (termId, busy) => broadcast('term:activity', { termId, busy })
   })
 
   resumeManager = new ResumeManager({
@@ -503,6 +513,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   ptyManager?.disposeAll()
   resumeManager?.disposeAll()
+  activityMonitor?.dispose()
   graphStore?.dispose()
   taskHub?.dispose()
   mcpServer?.stop()

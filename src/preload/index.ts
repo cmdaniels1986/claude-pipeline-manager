@@ -47,6 +47,7 @@ const api = {
   onTermData: subscribe<{ termId: string; data: string }>('term:data'),
   onTermExit: subscribe<{ termId: string; exitCode: number }>('term:exit'),
   onTermUsage: subscribe<TermUsage>('term:usage'),
+  onTermActivity: subscribe<{ termId: string; busy: boolean }>('term:activity'),
   onTermAdopt: subscribe<{ termId: string; label: string; cwd: string; color?: string }>('term:adopt'),
   onTermResumed: subscribe<string>('term:resumed'),
 

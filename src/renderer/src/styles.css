@@ -640,6 +640,21 @@ button.toggled {
   flex: 0 0 auto;
   box-shadow: 0 0 6px currentColor;
 }
+/* shown in place of the status dot while Claude is working in that terminal */
+.tab-spinner {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: tab-spin 0.7s linear infinite;
+}
+@keyframes tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .tab-label {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -15,6 +15,8 @@ export interface PaneRec {
   /** true once the user has hand-named this tab, so setLive won't overwrite it */
   renamed?: boolean
   status: 'starting' | 'live' | 'exited'
+  /** Claude is actively working in this terminal (drives the spinning tab icon) */
+  busy?: boolean
   exitCode?: number
 }
 
@@ -36,6 +38,8 @@ interface TerminalStore {
   }) => void
   adoptPane: (opts: { termId: string; label: string; cwd: string; color?: string }) => void
   setActive: (paneId: string) => void
+  /** flip a terminal's "Claude is working" state (drives the spinning tab icon) */
+  setBusy: (termId: string, busy: boolean) => void
   /** give a tab a custom name (right-click → rename) */
   renamePane: (paneId: string, label: string) => void
   /** change a tab's accent color (undefined clears it) */
@@ -109,6 +113,10 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       }
     }),
   setActive: (paneId) => set({ activePaneId: paneId }),
+  setBusy: (termId, busy) =>
+    set((s) => ({
+      panes: s.panes.map((p) => (p.termId === termId ? { ...p, busy } : p))
+    })),
   renamePane: (paneId, label) =>
     set((s) => ({
       panes: s.panes.map((p) => (p.paneId === paneId ? { ...p, label, renamed: true } : p))
@@ -126,7 +134,9 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
     })),
   setExited: (termId, exitCode) =>
     set((s) => ({
-      panes: s.panes.map((p) => (p.termId === termId ? { ...p, status: 'exited' as const, exitCode } : p))
+      panes: s.panes.map((p) =>
+        p.termId === termId ? { ...p, status: 'exited' as const, exitCode, busy: false } : p
+      )
     })),
   setResumedLive: (termId) =>
     set((s) => ({
@@ -191,6 +201,9 @@ if (typeof window !== 'undefined' && window.api) {
   })
   window.api.onTermUsage((usage) => {
     useTerminalStore.getState().setUsage(usage)
+  })
+  window.api.onTermActivity(({ termId, busy }) => {
+    useTerminalStore.getState().setBusy(termId, busy)
   })
   window.api.onResumeChanged((state) => useTerminalStore.getState().setResume(state))
   window.api.onTermResumed((termId) => useTerminalStore.getState().setResumedLive(termId))
