@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Diagnostics, ProjectInfo, UpdateStatus } from '../../shared/types'
 import { GraphDock } from './components/GraphDock'
+import { MemoryCheck } from './components/MemoryCheck'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { TaskDock } from './components/TaskDock'
@@ -26,6 +27,8 @@ export default function App(): React.JSX.Element {
   const [checking, setChecking] = useState(false)
   const [login, setLogin] = useState<{ checking: boolean; ok?: boolean; detail?: string } | null>(null)
   const [taskWarning, setTaskWarning] = useState<string | null>(null)
+  // shown automatically on first open so the user can see their memory loading
+  const [showMemory, setShowMemory] = useState(true)
   const usage = useTerminalStore((s) => s.usage)
   const billingReal = useTerminalStore((s) => s.billingReal)
   const totals = sessionTotals(usage)
@@ -144,6 +147,13 @@ export default function App(): React.JSX.Element {
         <button onClick={() => void checkUpdates()} disabled={checking} title="Check GitHub for a newer version now">
           ⟳ {checking ? 'Checking…' : 'Updates'}
         </button>
+        <button
+          className={showMemory ? 'toggled' : ''}
+          onClick={() => setShowMemory((v) => !v)}
+          title="Check which memory banks are loaded into your terminals"
+        >
+          🧠 Memory
+        </button>
         <span className="spacer" />
         {totals.terminals > 0 && (
           <span
@@ -165,6 +175,8 @@ export default function App(): React.JSX.Element {
           </span>
         )}
       </header>
+
+      {showMemory && <MemoryCheck onClose={() => setShowMemory(false)} />}
 
       {update && update.behind > 0 && (
         <div className="update-banner">

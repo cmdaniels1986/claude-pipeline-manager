@@ -2,11 +2,13 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AgentInfo,
   ChangedNodesResult,
+  ContextChangedPayload,
   CreateTermOptions,
   Diagnostics,
   GoalStatus,
   GraphChangedPayload,
   GraphState,
+  MemoryScan,
   ProjectInfo,
   ProjectsState,
   ResumeState,
@@ -98,6 +100,13 @@ const api = {
     ipcRenderer.invoke('tasks:moveGoal', p),
   onTasksChanged: subscribe<TasksChangedPayload>('tasks:changed'),
 
+  // shared context (coworkers on the same project)
+  contextGet: (): Promise<ContextChangedPayload> => ipcRenderer.invoke('context:get'),
+  contextPost: (p: { text: string; taskId?: string; taskTitle?: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('context:post', p),
+  contextRemove: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('context:remove', id),
+  onContextChanged: subscribe<ContextChangedPayload>('context:changed'),
+
   // prompt queue + usage-limit auto-resume
   // (promptInject enqueues; the queue drains immediately when usage is available)
   promptInject: (opts: { termId: string; text: string }): Promise<void> =>
@@ -115,6 +124,7 @@ const api = {
   // diagnostics
   getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics'),
   checkLogin: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('app:checkLogin'),
+  scanMemory: (): Promise<MemoryScan> => ipcRenderer.invoke('memory:scan'),
 
   // updates
   updatesCheck: (): Promise<UpdateCheckResult> => ipcRenderer.invoke('updates:check'),

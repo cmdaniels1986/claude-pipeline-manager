@@ -2,6 +2,26 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
+/** Claude Code's config dir (honors CLAUDE_CONFIG_DIR), where per-project stores live. */
+export function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
+}
+
+/** Claude Code encodes a project path into a folder name by replacing each path
+ *  separator and the drive colon with a dash: C:\Users\cmdan -> C--Users-cmdan. */
+export function encodeProjectPath(absPath: string): string {
+  return absPath.replace(/[\\/:]/g, '-')
+}
+
+/** Where the user-level ("all projects") memory store lives — the single source
+ *  of truth for both the injector and the startup memory check. */
+export function userMemoryPaths(): { configDir: string; encodedHome: string; dir: string; indexPath: string } {
+  const configDir = claudeConfigDir()
+  const encodedHome = encodeProjectPath(homedir())
+  const dir = join(configDir, 'projects', encodedHome, 'memory')
+  return { configDir, encodedHome, dir, indexPath: join(dir, 'MEMORY.md') }
+}
+
 /**
  * Locates the user's "home"/user-level auto-memory index — the cross-project
  * MEMORY.md that a normal `claude` session picks up when launched from the home
@@ -13,12 +33,7 @@ import { join } from 'path'
  */
 export function resolveUserMemory(): { dir: string; indexPath: string; content: string } | null {
   try {
-    const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
-    // Claude Code encodes a project path into a folder name by replacing each
-    // path separator and the drive colon with a dash: C:\Users\cmdan -> C--Users-cmdan.
-    const encodedHome = homedir().replace(/[\\/:]/g, '-')
-    const dir = join(configDir, 'projects', encodedHome, 'memory')
-    const indexPath = join(dir, 'MEMORY.md')
+    const { dir, indexPath } = userMemoryPaths()
     if (!existsSync(indexPath)) return null
     const content = readFileSync(indexPath, 'utf8').trim()
     if (!content) return null

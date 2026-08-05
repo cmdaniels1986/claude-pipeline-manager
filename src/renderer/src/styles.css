@@ -593,6 +593,120 @@ button.toggled {
   border-style: dashed;
 }
 
+/* ---- shared context ---- */
+.context-section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.context-open-btn {
+  font-size: 11px;
+  color: var(--accent);
+}
+.context-blurb {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 2px 0 8px;
+}
+.context-blurb code,
+.context-post-text code {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+.context-composer {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+.context-input {
+  flex: 1;
+  resize: vertical;
+  min-height: 34px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+.context-input:focus {
+  border-color: var(--accent);
+}
+.context-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.context-post {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  padding: 6px 9px;
+}
+.context-post-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.context-post-author {
+  font-weight: 600;
+  color: var(--text);
+}
+.context-post-when {
+  color: var(--text-mute);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+.context-post-task {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+.context-post-remove {
+  padding: 0 4px;
+  opacity: 0;
+}
+.context-post:hover .context-post-remove {
+  opacity: 1;
+}
+.context-post-text {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* the "share context?" prompt shown when a shared task is started */
+.share-prompt {
+  margin: 0 12px 8px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(47, 230, 214, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-prompt-title {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.share-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* ---- terminals ---- */
 .terminal-tabs {
   display: flex;
@@ -918,6 +1032,142 @@ button.danger:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+/* ---- startup memory check ---- */
+.memory-check {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elevated);
+  font-size: 12.5px;
+}
+.memory-check.searching {
+  background: rgba(88, 166, 255, 0.06);
+  border-bottom-color: rgba(88, 166, 255, 0.4);
+}
+.memory-check.ok {
+  background: rgba(47, 230, 166, 0.07);
+  border-bottom-color: var(--ok);
+}
+.memory-check.bad {
+  background: rgba(255, 77, 109, 0.09);
+  border-bottom-color: var(--danger);
+}
+.memory-check-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.memory-check-icon {
+  font-size: 15px;
+  flex: 0 0 auto;
+}
+.memory-check-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.memory-check.ok .memory-check-title strong {
+  color: var(--ok);
+}
+.mem-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(88, 166, 255, 0.3);
+  border-top-color: #58a6ff;
+  animation: tab-spin 0.7s linear infinite;
+}
+.memory-check-body {
+  margin: 6px 0 2px 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mem-active-line code {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  word-break: break-all;
+}
+.mem-recognize {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.mem-title-chip {
+  color: var(--text);
+  margin-right: 6px;
+}
+.mem-more {
+  color: var(--text-mute);
+}
+.mem-others-note,
+.mem-bad-hint {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.mem-bad-reason {
+  color: #ffa9b8;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+.mem-bank-list {
+  margin: 6px 0 2px 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mem-bank-list.details {
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.mem-bank {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+.mem-bank.seen {
+  opacity: 1;
+}
+.mem-bank.active .mem-bank-key {
+  color: var(--ok);
+  font-weight: 600;
+}
+.mem-bank-check {
+  width: 12px;
+  flex: 0 0 auto;
+  color: var(--ok);
+}
+.mem-bank-key {
+  color: var(--text);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+.mem-bank-meta {
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.mem-config-dir {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--text-mute);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  word-break: break-all;
 }
 
 .empty-state {

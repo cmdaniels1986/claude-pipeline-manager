@@ -155,6 +155,37 @@ export interface TasksWarning {
   message: string
 }
 
+// ---- shared context (coworkers on the same project) -----------------------
+/** A note a coworker posts to the project's shared folder so others picking up
+ *  the work have the background — optionally tied to the shared task it's about. */
+export interface ContextPost {
+  id: string
+  /** display name of whoever posted it (this machine's user) */
+  author: string
+  ts: string
+  text: string
+  /** the shared task this context is about, when posted from the "working on it" prompt */
+  taskId?: string
+  taskTitle?: string
+}
+
+export interface ContextState {
+  version: 1
+  updatedAt: string
+  posts: ContextPost[]
+  /** deleted post ids, so a removal propagates across the shared file */
+  removed?: { id: string; ts: string }[]
+}
+
+/** the shared-context view for the active project */
+export interface ContextSnapshot {
+  /** the shared folder path, or null when this project has no shared location */
+  sharedPath: string | null
+  posts: ContextPost[]
+}
+
+export type ContextChangedPayload = ContextSnapshot
+
 export interface AgentInfo {
   name: string
   description?: string
@@ -195,6 +226,39 @@ export const AGENT_COLORS = [
   '#39c5cf',
   '#ff7b72'
 ] as const
+
+// ---- startup memory check -------------------------------------------------
+/** One Claude Code auto-memory store found under the config dir. */
+export interface MemoryBank {
+  /** the encoded project-folder name, e.g. "C--Users-cmdan" */
+  key: string
+  /** absolute path to the store's memory/ folder */
+  dir: string
+  /** number of "- [Title](file)" entries in its MEMORY.md index */
+  entries: number
+  /** number of memory .md files besides MEMORY.md */
+  files: number
+  /** the first few entry titles, so the user can recognize their own memory */
+  sampleTitles: string[]
+  /** true for the user-level ("all projects") store the app injects into terminals */
+  active: boolean
+  /** true when it has a readable, non-empty MEMORY.md */
+  hasIndex: boolean
+}
+
+/** Result of scanning every known memory bank at startup. */
+export interface MemoryScan {
+  /** the config dir searched (honors CLAUDE_CONFIG_DIR) */
+  configDir: string
+  /** every memory bank found, active one first */
+  banks: MemoryBank[]
+  /** the user-level store that gets injected, if present + non-empty */
+  active: MemoryBank | null
+  /** true when the active cross-project memory was found and will be injected */
+  ok: boolean
+  /** why the check failed / what to do, when !ok */
+  reason?: string
+}
 
 export interface Diagnostics {
   claudeExePath: string

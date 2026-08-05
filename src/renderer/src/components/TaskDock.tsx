@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Goal, Task, TaskScope, TaskStatus } from '../../../shared/types'
+import { useContextStore } from '../stores/contextStore'
 import { useTaskStore } from '../stores/taskStore'
 
 const NEXT: Record<TaskStatus, TaskStatus> = { todo: 'doing', doing: 'done', done: 'todo' }
@@ -20,11 +21,23 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const shared = useTaskStore((s) => s.shared)
   const sharedPath = useTaskStore((s) => s.sharedPath)
   const lastEvent = useTaskStore((s) => s.lastEvent)
+  const contextPosts = useContextStore((s) => s.posts)
+  const contextShared = useContextStore((s) => s.sharedPath)
   const [newGoal, setNewGoal] = useState<Record<TaskScope, string>>({ mine: '', shared: '' })
   const [newTask, setNewTask] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<Editing | null>(null)
+  const [contextDraft, setContextDraft] = useState('')
+  // when a shared task is started, we offer to post context about it
+  const [sharePrompt, setSharePrompt] = useState<{ taskId: string; taskTitle: string; text: string } | null>(null)
 
   const hasShared = shared !== null
+  const canShareContext = contextShared !== null
+
+  const postContext = (text: string, task?: { taskId: string; taskTitle: string }): void => {
+    const body = text.trim()
+    if (!body) return
+    void window.api.contextPost({ text: body, taskId: task?.taskId, taskTitle: task?.taskTitle })
+  }
 
   const addGoal = (scope: TaskScope): void => {
     const title = newGoal[scope].trim()
@@ -40,8 +53,13 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
     setNewTask((m) => ({ ...m, [goalId]: '' }))
   }
 
-  const cycle = (task: Task): void => {
-    void window.api.tasksUpdateTask({ taskId: task.id, status: NEXT[task.status] })
+  const cycle = (task: Task, scope: TaskScope): void => {
+    const next = NEXT[task.status]
+    void window.api.tasksUpdateTask({ taskId: task.id, status: next })
+    // starting a shared task → offer to share context with the coworker
+    if (scope === 'shared' && next === 'doing' && canShareContext) {
+      setSharePrompt({ taskId: task.id, taskTitle: task.title, text: '' })
+    }
   }
 
   const commitEdit = (kind: 'goal' | 'task'): void => {
@@ -132,7 +150,7 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
             <div key={task.id} className={`task task-${task.status}`}>
               <button
                 className={`task-status task-status-${task.status}`}
-                onClick={() => cycle(task)}
+                onClick={() => cycle(task, scope)}
                 title={STATUS_TITLE[task.status]}
               >
                 {STATUS_GLYPH[task.status]}
@@ -220,6 +238,79 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
     )
   }
 
+  const when = (iso: string): string => iso.replace('T', ' ').slice(0, 16)
+
+  const contextSection = (): React.JSX.Element => (
+    <section className="task-section context-section">
+      <div className="task-section-head">
+        <span className="task-section-title">📎 Shared context</span>
+        <button
+          className="icon-button context-open-btn"
+          title="Open the shared folder (CONTEXT.md lives here)"
+          onClick={() => contextShared && void window.api.projectRevealShared(contextShared)}
+        >
+          ↗ folder
+        </button>
+      </div>
+      <p className="context-blurb">
+        Post background for coworkers on this project — where things stand, gotchas, what you’re about to touch. Saved to{' '}
+        <code>CONTEXT.md</code> in the shared folder.
+      </p>
+
+      <div className="context-composer">
+        <textarea
+          className="context-input"
+          value={contextDraft}
+          placeholder="Share context with your coworker…"
+          rows={2}
+          onChange={(e) => setContextDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              postContext(contextDraft)
+              setContextDraft('')
+            }
+          }}
+        />
+        <button
+          className="primary"
+          disabled={!contextDraft.trim()}
+          onClick={() => {
+            postContext(contextDraft)
+            setContextDraft('')
+          }}
+          title="Post (Ctrl/⌘+Enter)"
+        >
+          Post
+        </button>
+      </div>
+
+      {contextPosts.length === 0 ? (
+        <p className="task-empty">No shared context yet. Post the first note above.</p>
+      ) : (
+        <div className="context-list">
+          {[...contextPosts].reverse().map((p) => (
+            <div key={p.id} className="context-post">
+              <div className="context-post-head">
+                <span className="context-post-author">{p.author}</span>
+                <span className="context-post-when">{when(p.ts)}</span>
+                {p.taskTitle && <span className="context-post-task" title="Posted while working on this task">↳ {p.taskTitle}</span>}
+                <span className="spacer" />
+                <button
+                  className="icon-button context-post-remove"
+                  title="Delete this note"
+                  onClick={() => window.confirm('Delete this shared context note?') && void window.api.contextRemove(p.id)}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="context-post-text">{p.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+
   return (
     <div className="graph-dock">
       <div className="graph-dock-header">
@@ -237,6 +328,38 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
         </button>
       </div>
 
+      {sharePrompt && (
+        <div className="share-prompt">
+          <div className="share-prompt-title">
+            🤝 You’re now working on “{sharePrompt.taskTitle}”. Share context with your coworker?
+          </div>
+          <textarea
+            className="context-input"
+            autoFocus
+            rows={2}
+            value={sharePrompt.text}
+            placeholder="What’s the state / your plan for this task? (optional)"
+            onChange={(e) => setSharePrompt((p) => (p ? { ...p, text: e.target.value } : p))}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setSharePrompt(null)
+            }}
+          />
+          <div className="share-prompt-actions">
+            <button
+              className="primary"
+              disabled={!sharePrompt.text.trim()}
+              onClick={() => {
+                postContext(sharePrompt.text, { taskId: sharePrompt.taskId, taskTitle: sharePrompt.taskTitle })
+                setSharePrompt(null)
+              }}
+            >
+              Share context
+            </button>
+            <button onClick={() => setSharePrompt(null)}>Not now</button>
+          </div>
+        </div>
+      )}
+
       <div className="task-dock-body">
         {section('mine')}
         {hasShared ? (
@@ -247,6 +370,7 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
             <strong>Shared Goals</strong> list synced through a cloud folder.
           </p>
         )}
+        {canShareContext && contextSection()}
       </div>
     </div>
   )

@@ -17,6 +17,8 @@ import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
 import { ResumeManager } from './usage/ResumeManager'
 import { UsageTracker } from './usage/UsageTracker'
+import { ContextStore } from './context/ContextStore'
+import { scanMemoryBanks } from './memoryScan'
 import { buildUserMemoryBlock } from './userMemory'
 import {
   broadcast,
@@ -73,6 +75,8 @@ const agentDiscovery = new AgentDiscovery()
 let usageTracker: UsageTracker
 let graphStore: GraphStore | null = null
 let taskHub: TaskHub | null = null
+/** shared context notes, only when the active project has a shared folder */
+let contextStore: ContextStore | null = null
 let projectManager: ProjectManager
 let activeProject: string | null = null
 const startupWarnings: string[] = []
@@ -103,6 +107,29 @@ function makeTaskHub(info: ProjectInfo): TaskHub {
   })
 }
 
+/** The active project's shared folder, or null when it isn't shared. */
+function activeSharedPath(): string | null {
+  const active = projectManager?.list().find((p) => p.id === projectManager.activeId())
+  return active?.sharedTasksPath ?? null
+}
+
+/** Snapshot pushed to the renderer's shared-context view. */
+function contextSnapshot(sharedPath: string | null): { sharedPath: string | null; posts: ReturnType<ContextStore['get']> } {
+  return { sharedPath, posts: contextStore?.get() ?? [] }
+}
+
+/** (Re)build the shared-context store for a project: present only when the
+ *  project has a shared folder, since context is for coworkers on the same one. */
+function rebuildContextStore(sharedPath: string | null): void {
+  contextStore?.dispose()
+  contextStore = null
+  if (sharedPath) {
+    contextStore = new ContextStore(sharedPath, taskAuthorName())
+    contextStore.on('change', () => broadcast('context:changed', contextSnapshot(sharedPath)))
+  }
+  broadcast('context:changed', contextSnapshot(sharedPath))
+}
+
 function setActiveProject(info: ProjectInfo): void {
   if (activeProject === info.root) return
   graphStore?.dispose()
@@ -111,6 +138,7 @@ function setActiveProject(info: ProjectInfo): void {
   graphStore = new GraphStore(info.root)
   graphStore.on('change', (payload) => broadcast('graph:changed', payload))
   taskHub = makeTaskHub(info)
+  rebuildContextStore(info.sharedTasksPath ?? null)
   agentDiscovery.setProjectRoot(info.root)
   broadcast('graph:changed', { graph: graphStore.get(), event: null })
   broadcast('tasks:changed', { ...taskHub.snapshot(), event: null, scope: null })
@@ -299,6 +327,7 @@ function registerIpc(): void {
         // put; unsharing copies shared goals back into the private list)
         projectManager.setSharedTasksPath(id, folderPath)
         taskHub.setSharedPath(folderPath)
+        rebuildContextStore(folderPath)
         broadcast('tasks:changed', { ...taskHub.snapshot(), event: null, scope: null })
       } else {
         // apply the same transition off to the side for a non-active project
@@ -375,6 +404,20 @@ function registerIpc(): void {
     taskHub?.moveGoal(p.goalId, p.scope, null)
   )
 
+  // shared context — coworker notes posted into the project's shared folder.
+  // Only functional when the active project has a shared location (contextStore
+  // is null otherwise, so post/remove are safe no-ops).
+  ipcMain.handle('context:get', () => contextSnapshot(contextStore ? activeSharedPath() : null))
+  ipcMain.handle('context:post', (_e, p: { text: string; taskId?: string; taskTitle?: string }) => {
+    if (!contextStore || !p.text?.trim()) return { ok: false }
+    contextStore.post({ text: p.text, taskId: p.taskId, taskTitle: p.taskTitle })
+    return { ok: true }
+  })
+  ipcMain.handle('context:remove', (_e, id: string) => {
+    contextStore?.remove(id)
+    return { ok: true }
+  })
+
   // Prompts are queued (not sent raw), so they auto-resume after a usage limit.
   // When usage is available the queue drains immediately, matching the old behavior.
   ipcMain.handle('prompt:inject', (_e, { termId, text }: { termId: string; text: string }) => {
@@ -383,6 +426,10 @@ function registerIpc(): void {
   ipcMain.handle('resume:get', () => resumeManager.states())
   ipcMain.handle('resume:now', (_e, termId: string) => resumeManager.resumeNow(termId))
   ipcMain.handle('resume:cancel', (_e, termId: string) => resumeManager.cancel(termId))
+
+  // startup memory check — confirm the user's cross-project memory is found and
+  // will be injected into terminals (surfaces the otherwise-silent injection)
+  ipcMain.handle('memory:scan', () => scanMemoryBanks())
 
   ipcMain.handle('app:diagnostics', (): Diagnostics => {
     return {
@@ -516,6 +563,7 @@ app.on('before-quit', () => {
   activityMonitor?.dispose()
   graphStore?.dispose()
   taskHub?.dispose()
+  contextStore?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
   usageTracker?.dispose()
