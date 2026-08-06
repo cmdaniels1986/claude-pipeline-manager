@@ -1,0 +1,40 @@
+# Packaging config for a real installed Windows app (NSIS installer).
+# Build with:  npm run dist    (produces dist/Claude Pipeline Manager-<ver>-setup.exe)
+appId: com.chaddaniels.claude-pipeline-manager
+productName: Claude Pipeline Manager
+copyright: Copyright © 2026 Chad Daniels
+
+directories:
+  buildResources: build
+  output: dist
+
+# Ship the built app + production node_modules; leave source/config/tests out.
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!scripts/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!electron-builder.yml'
+  - '!{.gitignore,.nvmrc,AGENTS.md,CLAUDE.md,README.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!Start Pipeline Manager.bat'
+
+# node-pty is a native module — its .node binary + ConPTY helpers must live on
+# disk (unpacked from the asar) so the spawned Claude terminals actually start.
+asarUnpack:
+  - '**/node_modules/@lydell/node-pty/**'
+
+win:
+  target:
+    - nsis
+  executableName: ClaudePipelineManager
+
+nsis:
+  oneClick: false
+  perMachine: false # install per-user, no admin prompt
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Claude Pipeline Manager
+  uninstallDisplayName: Claude Pipeline Manager
+  artifactName: ${productName}-${version}-setup.${ext}

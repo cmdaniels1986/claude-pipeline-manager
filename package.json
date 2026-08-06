@@ -2,13 +2,16 @@
   "name": "claude-pipeline-manager",
   "version": "0.1.0",
   "description": "Desktop manager for Claude Code: multi-terminal panes, agent launcher, live pipeline graph",
+  "author": "Chad Daniels",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json"
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "pack:dir": "electron-vite build && electron-builder --dir",
+    "dist": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.12",
@@ -33,6 +36,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "@xterm/headless": "^6.0.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
