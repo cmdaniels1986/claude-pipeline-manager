@@ -26,6 +26,8 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const [newGoal, setNewGoal] = useState<Record<TaskScope, string>>({ mine: '', shared: '' })
   const [newTask, setNewTask] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<Editing | null>(null)
+  // whether each section's "Completed" group is collapsed shut (default: shown, one line per goal)
+  const [completedHidden, setCompletedHidden] = useState<Record<TaskScope, boolean>>({ mine: false, shared: false })
   const [contextDraft, setContextDraft] = useState('')
   // when a shared task is started, we offer to post context about it
   const [sharePrompt, setSharePrompt] = useState<{ taskId: string; taskTitle: string; text: string } | null>(null)
@@ -203,8 +205,42 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
     )
   }
 
+  // A completed goal, collapsed to a single line in the "Completed" group.
+  const completedRow = (goal: Goal): React.JSX.Element => {
+    const done = goal.tasks.filter((t) => t.status === 'done').length
+    return (
+      <div key={goal.id} className="goal-collapsed">
+        <button
+          className="goal-check goal-check-done"
+          onClick={() => toggleGoalDone(goal)}
+          title="Completed — click to reopen"
+        >
+          ✓
+        </button>
+        <span
+          className="goal-collapsed-title"
+          title={`${goal.title} — double-click to reopen`}
+          onDoubleClick={() => toggleGoalDone(goal)}
+        >
+          {goal.title}
+        </span>
+        {goal.tasks.length > 0 && (
+          <span className="goal-progress complete">
+            {done}/{goal.tasks.length}
+          </span>
+        )}
+        <button className="icon-button goal-remove" onClick={() => removeGoal(goal)} title="Delete goal">
+          ✕
+        </button>
+      </div>
+    )
+  }
+
   const section = (scope: TaskScope): React.JSX.Element => {
     const goals = (scope === 'mine' ? mine : shared)?.goals ?? []
+    const activeGoals = goals.filter((g) => g.status !== 'done')
+    const completedGoals = goals.filter((g) => g.status === 'done')
+    const hidden = completedHidden[scope]
     return (
       <section className="task-section">
         <div className="task-section-head">
@@ -233,7 +269,21 @@ export function TaskDock({ onClose }: { onClose: () => void }): React.JSX.Elemen
               : 'No shared goals yet — add one, or move a goal here with 🔗.'}
           </p>
         )}
-        {goals.map((goal) => goalRow(goal, scope))}
+        {activeGoals.map((goal) => goalRow(goal, scope))}
+        {completedGoals.length > 0 && (
+          <div className="completed-group">
+            <button
+              className="completed-head"
+              onClick={() => setCompletedHidden((m) => ({ ...m, [scope]: !m[scope] }))}
+              title={hidden ? 'Show completed goals' : 'Hide completed goals'}
+            >
+              <span className="completed-caret">{hidden ? '▸' : '▾'}</span>
+              <span className="completed-label">Completed</span>
+              <span className="completed-count">{completedGoals.length}</span>
+            </button>
+            {!hidden && <div className="completed-list">{completedGoals.map((goal) => completedRow(goal))}</div>}
+          </div>
+        )}
       </section>
     )
   }

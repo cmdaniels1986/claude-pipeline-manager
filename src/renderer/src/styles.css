@@ -533,6 +533,72 @@ button.toggled {
   font-size: 11px;
   margin: 4px 0 2px;
 }
+/* Completed goals — collapsed to single lines under a "Completed" header */
+.completed-group {
+  margin-top: 12px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.completed-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+.completed-head:hover {
+  color: var(--text);
+}
+.completed-caret {
+  width: 10px;
+  font-size: 9px;
+}
+.completed-count {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 6px;
+}
+.completed-list {
+  margin-top: 6px;
+}
+.goal-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.goal-collapsed:hover {
+  background: var(--bg-elevated);
+}
+.goal-collapsed .goal-check {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+.goal-collapsed-title {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-mute);
+  text-decoration: line-through;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .task-list {
   margin: 6px 0 4px;
 }
@@ -949,6 +1015,27 @@ button.danger:hover {
 }
 .terminal-pane-body .xterm {
   height: 100%;
+}
+/* transient confirmation when a clipboard image is spilled to a file + attached */
+.paste-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 46px;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: 90%;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(5, 10, 12, 0.94);
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 /* exit bar sits at the bottom so Claude's final output stays readable above it */
 .terminal-pane-exitbar {
