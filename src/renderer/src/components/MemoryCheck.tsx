@@ -51,7 +51,11 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
   const searching = phase === 'searching'
   const ok = scan?.ok ?? false
   const active = scan?.active ?? null
-  const others = (scan?.banks ?? []).filter((b) => !b.active)
+  const banks = scan?.banks ?? []
+  const others = banks.filter((b) => !b.active)
+  const primary = active ?? banks[0] ?? null
+  const bankCount = banks.length
+  const totalEntries = banks.reduce((n, b) => n + b.entries, 0)
 
   const bankRow = (b: MemoryBank, seen: boolean): React.JSX.Element => (
     <div className={`mem-bank${b.active ? ' active' : ''}${seen ? ' seen' : ''}`} key={b.key}>
@@ -59,7 +63,7 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
       <span className="mem-bank-key">{b.active ? 'Your cross-project memory (all projects)' : b.key}</span>
       <span className="mem-bank-meta">
         {b.entries} {b.entries === 1 ? 'entry' : 'entries'} · {b.files} file{b.files === 1 ? '' : 's'}
-        {b.active && ' · injected'}
+        {(b.hasIndex || b.files > 0) && ' · injected'}
       </span>
     </div>
   )
@@ -74,12 +78,13 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
           </span>
         ) : ok ? (
           <span className="memory-check-title">
-            ✓ Your memory is loaded — <strong>{active?.entries ?? 0}</strong> memories from your cross-project store,
-            injected into every new terminal (same context as opening Claude at home).
+            ✓ Your memory is loaded — <strong>{totalEntries}</strong> {totalEntries === 1 ? 'memory' : 'memories'} across{' '}
+            <strong>{bankCount}</strong> {bankCount === 1 ? 'store' : 'stores'}, injected into every new terminal (the same
+            context you have across all your plain Claude sessions).
           </span>
         ) : (
           <span className="memory-check-title">
-            ⚠ No cross-project memory found — new terminals won’t have your saved memory.
+            ⚠ No Claude memory found on this machine — new terminals won’t have any saved memory.
           </span>
         )}
         <span className="spacer" />
@@ -98,28 +103,28 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
         <div className="mem-bank-list">{(scan?.banks ?? []).map((b, i) => bankRow(b, i < revealed))}</div>
       )}
 
-      {!searching && ok && active && (
+      {!searching && ok && primary && (
         <div className="memory-check-body">
           <div className="mem-active-line">
-            <code>{active.dir}</code>
+            <code>{primary.dir}</code>
           </div>
-          {active.sampleTitles.length > 0 && (
+          {primary.sampleTitles.length > 0 && (
             <div className="mem-recognize">
               Recognize it?{' '}
-              {active.sampleTitles.map((t, i) => (
+              {primary.sampleTitles.map((t, i) => (
                 <span key={i} className="mem-title-chip">
                   “{t}”
                 </span>
               ))}
-              {active.entries > active.sampleTitles.length && (
-                <span className="mem-more"> +{active.entries - active.sampleTitles.length} more</span>
+              {primary.entries > primary.sampleTitles.length && (
+                <span className="mem-more"> +{primary.entries - primary.sampleTitles.length} more</span>
               )}
             </div>
           )}
           {others.length > 0 && (
             <div className="mem-others-note">
-              Also found {others.length} project-specific memory bank{others.length === 1 ? '' : 's'} — these would
-              shadow your cross-project memory in a normal session, which is why this app injects it for you.
+              Plus {others.length} more project memory store{others.length === 1 ? '' : 's'} — a normal `claude` session
+              only sees one at a time, so this app injects all {bankCount} together to give you everything at once.
             </div>
           )}
         </div>

@@ -5,15 +5,14 @@ import { userMemoryPaths } from './userMemory'
 
 /**
  * Startup memory check: enumerate every Claude Code auto-memory store on this
- * machine and confirm the user-level ("all projects") one — the store this app
- * injects into every terminal — is present and readable. This is what makes the
- * otherwise-silent injection visible, so the user can see their memory will be
- * loaded rather than trusting it blind.
+ * machine — ALL of which the app now injects into every terminal — so the user
+ * can see their full saved memory will be loaded rather than trusting it blind.
  *
  * Stores live at <configDir>/projects/<encoded-path>/memory/MEMORY.md. The one
- * whose encoded path is the home dir is the cross-project store; the rest are
- * per-project stores that would SHADOW it in a normal session (the reason the
- * injection exists), and are reported for context.
+ * whose encoded path is the home dir is the cross-project ("all projects")
+ * store; the rest are per-project stores that a normal `claude` session would
+ * only see one-at-a-time. The app injects every store together so a terminal
+ * carries the same memory the user has across all their plain Claude sessions.
  */
 export function scanMemoryBanks(): MemoryScan {
   const { configDir, encodedHome, dir: activeDir } = userMemoryPaths()
@@ -48,17 +47,19 @@ export function scanMemoryBanks(): MemoryScan {
 
   banks.sort((a, b) => (a.active === b.active ? b.entries - a.entries : a.active ? -1 : 1))
   const active = banks.find((b) => b.active && b.hasIndex) ?? null
+  // Every store found is injected now — not just the home one — so the check is
+  // green whenever ANY memory exists on this machine, and reports the total.
+  const injectable = banks.filter((b) => b.hasIndex || b.files > 0)
 
   return {
     configDir,
     banks,
     active,
-    ok: !!active,
-    reason: active
-      ? undefined
-      : existsSync(join(activeDir, 'MEMORY.md'))
-        ? `Your cross-project memory index at ${join(activeDir, 'MEMORY.md')} is empty or unreadable.`
-        : `No cross-project memory index found at ${join(activeDir, 'MEMORY.md')}. New terminals won't have your saved memory.`
+    ok: injectable.length > 0,
+    reason:
+      injectable.length > 0
+        ? undefined
+        : `No Claude memory found under ${projectsDir}. New terminals won't have any saved memory — save a memory from any Claude session, then reopen this app.`
   }
 }
 
