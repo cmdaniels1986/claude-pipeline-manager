@@ -2,7 +2,7 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CreateTermOptions, Diagnostics, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
+import type { CostSuggestionAction, CostSuggestionKind, CreateTermOptions, Diagnostics, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { computeChangedNodes } from './graph/gitScope'
@@ -11,12 +11,14 @@ import { writeMcpConfigFile } from './mcp/writeMcpConfig'
 import { ProjectManager } from './projects/ProjectManager'
 import { ActivityMonitor } from './pty/activityDetect'
 import { PtyManager } from './pty/PtyManager'
+import { prunePastedImages, savePastedImage } from './images/pasteStore'
 import { TaskHub } from './tasks/TaskHub'
 import { checkLogin, detectClaude, type ClaudeInfo } from './pty/resolveClaude'
 import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
 import { ResumeManager } from './usage/ResumeManager'
 import { UsageTracker } from './usage/UsageTracker'
+import { CostAdvisor } from './usage/CostAdvisor'
 import { ContextStore } from './context/ContextStore'
 import { scanMemoryBanks } from './memoryScan'
 import { buildUserMemoryBlock } from './userMemory'
@@ -73,6 +75,7 @@ function sendToTermHost(termId: string, channel: string, payload: unknown): void
 }
 const agentDiscovery = new AgentDiscovery()
 let usageTracker: UsageTracker
+let costAdvisor: CostAdvisor
 let graphStore: GraphStore | null = null
 let taskHub: TaskHub | null = null
 /** shared context notes, only when the active project has a shared folder */
@@ -206,6 +209,8 @@ function writeSupportFiles(): { protocolPath: string; settingsFallbackPath: stri
 }
 
 function registerIpc(): void {
+  // clear out last week's pasted screenshots so ~/.claude/pasted-images can't grow forever
+  prunePastedImages()
   ipcMain.handle('term:create', (e, opts: CreateTermOptions) => {
     let isDir = false
     try {
@@ -248,6 +253,24 @@ function registerIpc(): void {
   ipcMain.on('term:input', (_e, { termId, data }: { termId: string; data: string }) => {
     ptyManager.write(termId, data)
   })
+  // Terminals only carry text, so a clipboard image never reaches the Claude CLI.
+  // The renderer hands us the raw bytes; we spill them to a file and type the path
+  // into the session — the same thing Claude Code's drag-and-drop does.
+  ipcMain.handle(
+    'term:pasteImage',
+    (_e, { termId, bytes, mime }: { termId: string; bytes: Uint8Array; mime: string }) => {
+      if (!ptyManager.isAlive(termId)) return { ok: false as const, error: 'Terminal is not running' }
+      try {
+        const { path, fileName } = savePastedImage(bytes, mime)
+        // match Claude Code's drag-drop: only quote when the path contains whitespace
+        const token = /\s/.test(path) ? `"${path}"` : path
+        ptyManager.write(termId, `${token} `)
+        return { ok: true as const, path, fileName }
+      } catch (err) {
+        return { ok: false as const, error: String(err) }
+      }
+    }
+  )
   ipcMain.on('term:resize', (_e, { termId, cols, rows }: { termId: string; cols: number; rows: number }) => {
     ptyManager.resize(termId, cols, rows)
   })
@@ -256,6 +279,7 @@ function registerIpc(): void {
     resumeManager.dispose(termId)
     termHosts.delete(termId)
     usageTracker.untrack(termId)
+    costAdvisor.untrack(termId)
     closeTerminalWindow(termId)
   })
   ipcMain.handle('term:setLabel', (_e, { termId, label }: { termId: string; label: string }) => {
@@ -427,6 +451,31 @@ function registerIpc(): void {
   ipcMain.handle('resume:now', (_e, termId: string) => resumeManager.resumeNow(termId))
   ipcMain.handle('resume:cancel', (_e, termId: string) => resumeManager.cancel(termId))
 
+  // cost advisor — dismiss a suggestion, or apply its one-click fix
+  ipcMain.handle('advisor:dismiss', (_e, { termId, kind }: { termId: string; kind: CostSuggestionKind }) => {
+    costAdvisor.dismiss(termId, kind)
+  })
+  ipcMain.handle(
+    'advisor:apply',
+    (_e, { termId, action }: { termId: string; action: CostSuggestionAction }) => {
+      if (action?.kind === 'inject_clear') {
+        if (!ptyManager.isAlive(termId)) return { ok: false as const, error: 'Terminal is not running' }
+        // type `/clear` into the session and submit — resets an over-large context
+        ptyManager.injectPrompt(termId, '/clear', true)
+        return { ok: true as const }
+      }
+      if (action?.kind === 'set_model') {
+        if (!ptyManager.isAlive(termId)) return { ok: false as const, error: 'Terminal is not running' }
+        const model = (action.model ?? '').trim()
+        if (!model) return { ok: false as const, error: 'No model specified' }
+        // type `/model <model>` and submit — switches this session to a cheaper tier
+        ptyManager.injectPrompt(termId, `/model ${model}`, true)
+        return { ok: true as const }
+      }
+      return { ok: false as const, error: 'Unknown action' }
+    }
+  )
+
   // startup memory check — confirm the user's cross-project memory is found and
   // will be injected into terminals (surfaces the otherwise-silent injection)
   ipcMain.handle('memory:scan', () => scanMemoryBanks())
@@ -505,7 +554,15 @@ app.whenReady().then(async () => {
   )
   await mcpServer.start()
 
-  usageTracker = new UsageTracker((usage) => sendToTermHost(usage.termId, 'term:usage', usage))
+  costAdvisor = new CostAdvisor((termId, suggestions) =>
+    sendToTermHost(termId, 'advisor:changed', { termId, suggestions })
+  )
+  usageTracker = new UsageTracker((usage) => {
+    sendToTermHost(usage.termId, 'term:usage', usage)
+    // feed the same telemetry into the cost advisor (subscription vs API framing
+    // comes from whether an API key is set)
+    costAdvisor.record(usage, Date.now(), !!process.env.ANTHROPIC_API_KEY)
+  })
   await usageTracker.start()
 
   ptyManager = new PtyManager({

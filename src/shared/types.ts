@@ -315,3 +315,54 @@ export interface TermUsage {
   /** estimated USD; null when the model's pricing is unknown */
   costUsd: number | null
 }
+
+// ---- cost advisor (session-monitoring suggestions) ------------------------
+/** which cost pattern a suggestion is about */
+export type CostSuggestionKind =
+  | 'cache_off'
+  | 'cache_thrash'
+  | 'context_bloat'
+  | 'model_rightsize'
+  | 'verbose_output'
+
+/** a one-click remediation the app can perform for a suggestion */
+export interface CostSuggestionAction {
+  label: string
+  /** inject_clear = type `/clear` to reset an over-large context;
+   *  set_model = type `/model <model>` to switch this session to a cheaper tier */
+  kind: 'inject_clear' | 'set_model'
+  /** target model alias for set_model (e.g. "sonnet"); ignored by other kinds */
+  model?: string
+  /** false when the action can't be undone (still low-stakes; the card explains) */
+  reversible: boolean
+}
+
+/** One money/quota-saving suggestion about a live session, derived purely from
+ *  its token telemetry. Savings is always a RANGE with a disclosed basis (never
+ *  false precision); confidence is a SEPARATE axis from savings. */
+export interface CostSuggestion {
+  /** stable identity: `${termId}:${kind}` — used for dedup + dismissal */
+  id: string
+  termId: string
+  kind: CostSuggestionKind
+  severity: 'high' | 'medium' | 'low'
+  /** one-line typed verdict, e.g. "Caching is essentially off this session" */
+  finding: string
+  /** the recommendation / what to do about it */
+  detail: string
+  /** conservative savings band, as a percent of this session's token spend */
+  savingsLowPct: number
+  savingsHighPct: number
+  /** how the estimate was derived — shown so the number isn't hand-wavy */
+  basis: string
+  confidence: 'low' | 'med' | 'high'
+  /** the numbers behind the call — powers the "why am I seeing this?" expander */
+  evidence: string[]
+  /** present only when there's a one-click fix; advisory-only otherwise */
+  action?: CostSuggestionAction
+}
+
+export interface AdvisorChangedPayload {
+  termId: string
+  suggestions: CostSuggestion[]
+}

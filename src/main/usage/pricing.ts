@@ -53,3 +53,20 @@ export function estimateCost(model: string | undefined, t: TokenTotals): number 
     perM(t.cacheRead, rate.input * CACHE_READ_MULT)
   )
 }
+
+/** Fraction (0..1) of this token mix's estimated cost that is OUTPUT tokens.
+ *  Output bills ~5x input, so a high fraction means response volume — not the
+ *  re-sent context — is what's driving spend. Null if the model isn't priced
+ *  or the mix has no cost. */
+export function outputCostFraction(model: string | undefined, t: TokenTotals): number | null {
+  const rate = rateFor(model)
+  if (!rate) return null
+  const perM = (n: number, price: number): number => (n / 1_000_000) * price
+  const outputCost = perM(t.output, rate.output)
+  const inputCost =
+    perM(t.input, rate.input) +
+    perM(t.cacheCreation, rate.input * CACHE_WRITE_MULT) +
+    perM(t.cacheRead, rate.input * CACHE_READ_MULT)
+  const total = outputCost + inputCost
+  return total > 0 ? outputCost / total : null
+}

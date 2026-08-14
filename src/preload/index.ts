@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
+  AdvisorChangedPayload,
   AgentInfo,
   ChangedNodesResult,
   ContextChangedPayload,
+  CostSuggestionAction,
+  CostSuggestionKind,
   CreateTermOptions,
   Diagnostics,
   GoalStatus,
@@ -35,6 +38,12 @@ const api = {
   // terminals
   termCreate: (opts: CreateTermOptions): Promise<TermInfo> => ipcRenderer.invoke('term:create', opts),
   termInput: (termId: string, data: string): void => ipcRenderer.send('term:input', { termId, data }),
+  termPasteImage: (
+    termId: string,
+    bytes: Uint8Array,
+    mime: string
+  ): Promise<{ ok: true; path: string; fileName: string } | { ok: false; error?: string }> =>
+    ipcRenderer.invoke('term:pasteImage', { termId, bytes, mime }),
   termResize: (termId: string, cols: number, rows: number): void =>
     ipcRenderer.send('term:resize', { termId, cols, rows }),
   termDispose: (termId: string): Promise<void> => ipcRenderer.invoke('term:dispose', termId),
@@ -115,6 +124,15 @@ const api = {
   resumeNow: (termId: string): Promise<void> => ipcRenderer.invoke('resume:now', termId),
   resumeCancel: (termId: string): Promise<void> => ipcRenderer.invoke('resume:cancel', termId),
   onResumeChanged: subscribe<ResumeState>('resume:changed'),
+
+  // cost advisor (session-monitoring suggestions)
+  advisorDismiss: (termId: string, kind: CostSuggestionKind): Promise<void> =>
+    ipcRenderer.invoke('advisor:dismiss', { termId, kind }),
+  advisorApply: (
+    termId: string,
+    action: CostSuggestionAction
+  ): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('advisor:apply', { termId, action }),
+  onAdvisorChanged: subscribe<AdvisorChangedPayload>('advisor:changed'),
 
   // node source files
   openFile: (path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('file:open', path),

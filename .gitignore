@@ -7,3 +7,4 @@ dist/
 /tmp
 scripts/e2e-*.js
 scripts/e2e-*.sh
+scripts/_*.mjs

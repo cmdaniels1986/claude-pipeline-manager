@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { useEffect, useRef, useState } from 'react'
 import { attachTermData, getTermTailText, useTerminalStore, type PaneRec } from '../stores/terminalStore'
 import { ResumeBar } from './ResumeBar'
+import { CostAdvisorBar } from './CostAdvisorBar'
 import { fmtCost, fmtTokens } from './usageFormat'
 
 const TERM_THEME = {
@@ -35,6 +36,8 @@ export function TerminalPane({
   const billingReal = useTerminalStore((s) => s.billingReal)
   const [showLog, setShowLog] = useState(false)
   const [showQueue, setShowQueue] = useState(false)
+  const [pasteMsg, setPasteMsg] = useState<string | null>(null)
+  const pasteTimer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     if (!hostRef.current || startedRef.current) return
@@ -114,10 +117,42 @@ export function TerminalPane({
     })
     observer.observe(host)
 
+    // xterm/ConPTY only carry text, so a pasted image is otherwise lost. Intercept
+    // the paste in the capture phase (before xterm's own textarea handler runs), and
+    // if the clipboard holds an image, spill it to a file in main and let it type the
+    // path into the session. Plain-text pastes fall straight through to xterm.
+    const flash = (msg: string): void => {
+      setPasteMsg(msg)
+      window.clearTimeout(pasteTimer.current)
+      pasteTimer.current = window.setTimeout(() => setPasteMsg(null), 2800)
+    }
+    const onPaste = (e: ClipboardEvent): void => {
+      if (!termId) return
+      const items = e.clipboardData?.items
+      const image = items && Array.from(items).find((it) => it.type.startsWith('image/'))
+      if (!image) return // text paste — leave it for xterm
+      // keep xterm from also pasting the image's (empty/garbage) text form
+      e.preventDefault()
+      e.stopPropagation()
+      const file = image.getAsFile()
+      if (!file) return
+      const id = termId
+      file
+        .arrayBuffer()
+        .then((buf) => window.api.termPasteImage(id, new Uint8Array(buf), file.type || 'image/png'))
+        .then((res) =>
+          flash(res.ok ? `📎 ${res.fileName} attached` : `⚠ ${res.error ?? 'Could not attach image'}`)
+        )
+        .catch((err) => flash(`⚠ ${String(err)}`))
+    }
+    host.addEventListener('paste', onPaste, true)
+
     return () => {
       disposed = true
       observer.disconnect()
       window.clearTimeout(resizeTimer)
+      window.clearTimeout(pasteTimer.current)
+      host.removeEventListener('paste', onPaste, true)
       detach?.()
       termRef.current = null
       term.dispose()
@@ -168,9 +203,11 @@ export function TerminalPane({
         </div>
       )}
       <div className="terminal-pane-body" ref={hostRef} />
+      {pasteMsg && <div className="paste-toast">{pasteMsg}</div>}
       {pane.termId && (
         <ResumeBar termId={pane.termId} forceOpen={showQueue} onClose={() => setShowQueue(false)} />
       )}
+      {pane.termId && pane.status !== 'exited' && <CostAdvisorBar termId={pane.termId} />}
       {usage && pane.status !== 'exited' && !resume?.limited && (
         <div
           className="usage-strip"
