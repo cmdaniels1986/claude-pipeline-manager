@@ -8,6 +8,8 @@ import type {
   CostSuggestionKind,
   CreateTermOptions,
   Diagnostics,
+  DismissMode,
+  FleetAdvisorPayload,
   GoalStatus,
   GraphChangedPayload,
   GraphState,
@@ -126,13 +128,14 @@ const api = {
   onResumeChanged: subscribe<ResumeState>('resume:changed'),
 
   // cost advisor (session-monitoring suggestions)
-  advisorDismiss: (termId: string, kind: CostSuggestionKind): Promise<void> =>
-    ipcRenderer.invoke('advisor:dismiss', { termId, kind }),
+  advisorDismiss: (termId: string, kind: CostSuggestionKind, mode?: DismissMode): Promise<void> =>
+    ipcRenderer.invoke('advisor:dismiss', { termId, kind, mode }),
   advisorApply: (
     termId: string,
     action: CostSuggestionAction
   ): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('advisor:apply', { termId, action }),
   onAdvisorChanged: subscribe<AdvisorChangedPayload>('advisor:changed'),
+  onAdvisorFleet: subscribe<FleetAdvisorPayload>('advisor:fleet'),
 
   // node source files
   openFile: (path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('file:open', path),

@@ -1,5 +1,5 @@
-import type { CostSuggestion, CostSuggestionKind } from '../../shared/types'
-import { estimateCost, outputCostFraction, type TokenTotals } from './pricing'
+import type { CostSuggestion, CostSuggestionKind, FleetSuggestion, SourceUsage } from '../../shared/types'
+import { cacheWriteMultFor, estimateCost, outputCostFraction, type TokenTotals } from './pricing'
 
 /**
  * A single cumulative token snapshot of a session at time `t`. The OTEL feed
@@ -15,6 +15,9 @@ export interface UsageSample {
   cacheCreation: number
   cost: number | null
   model?: string
+  /** per-source token subtotals for this cumulative snapshot, when the CLI
+   *  attributes usage by query_source (absent on builds that don't emit it) */
+  bySource?: SourceUsage[]
 }
 
 export interface AnalyzeInput {
@@ -55,8 +58,25 @@ const VERBOSE_MIN_OUTPUT = 50_000 // enough total output to be worth a nudge
 const VERBOSE_MIN_PER_TURN = 6_000 // mean response length is genuinely large
 const VERBOSE_MIN_COST_SHARE = 0.5 // and output is at least half of estimated spend
 
+// context-window ceiling — recent-turn context approaching the model's window,
+// where Claude Code auto-compacts (a summarization pass that itself costs tokens).
+const CEILING_WARN_SHARE = 0.8 // recent-turn context this fraction of the window
+const CEILING_HIGH_SHARE = 0.9 // …and above this it's imminent (high severity)
+
+// token-attribution hotspot — one non-main source (a subagent, an MCP server)
+// dominating spend. Only usable when the CLI emits per-source attribution.
+const ATTR_MIN_TOTAL = 80_000 // enough attributed tokens to be worth a nudge
+const ATTR_MIN_SHARE = 0.5 // a single non-main source is at least half of them
+
+// fleet: several terminals on Opus at once (the multi-terminal-only signal)
+const FLEET_WINDOW_MS = 5 * 60_000 // burn measured over the last ~5 min
+const FLEET_ACTIVE_MS = 3 * 60_000 // a term counts only if it emitted this recently
+const FLEET_BURN_MIN = 3000 // …and burned at least this many tokens/min
+const FLEET_MIN_OPUS_TERMS = 2 // this many concurrent Opus terminals → fire
+
 /** k-formatted token count for evidence lines, e.g. 182345 -> "182k". */
 function k(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
   if (n >= 1000) return `${Math.round(n / 1000)}k`
   return String(Math.round(n))
 }
@@ -103,6 +123,12 @@ const totalsOf = (s: UsageSample): TokenTotals => ({
   cacheRead: s.cacheRead
 })
 
+/** Context window (tokens) for a model, for judging how close a turn is to the
+ *  ceiling where Claude Code auto-compacts. Unknown model → 1M (won't false-fire). */
+function contextWindowFor(model?: string): number {
+  return (model ?? '').toLowerCase().startsWith('claude-haiku') ? 200_000 : 1_000_000
+}
+
 const SEV_RANK: Record<CostSuggestion['severity'], number> = { high: 0, medium: 1, low: 2 }
 
 /** Rank: severity bucket first, then larger potential savings. */
@@ -135,6 +161,7 @@ export function analyze(inp: AnalyzeInput): CostSuggestion[] {
   const cacheShare = totalPrompt > 0 ? cacheActivity / totalPrompt : 0
   const readRatio = cacheActivity > 0 ? cur.cacheRead / cacheActivity : 0
   const enoughEvidence = h.length >= MIN_SAMPLES && durMin >= MIN_MINUTES
+  const cacheMult = cacheWriteMultFor(inp.billingReal)
 
   const out: CostSuggestion[] = []
 
@@ -180,9 +207,38 @@ export function analyze(inp: AnalyzeInput): CostSuggestion[] {
     )
   }
 
-  // --- un-cleared long session / context bloat ---
+  // --- context-window ceiling (auto-compaction imminent) ---
+  // Recent-turn context near the model's window → Claude Code will soon
+  // auto-compact (a summarization pass that costs tokens and can drop detail).
   const turnCtx = recentTurnContext(h)
-  if (durMin >= BLOAT_MIN_MINUTES && turnCtx >= BLOAT_MIN_CONTEXT) {
+  const window = contextWindowFor(cur.model)
+  const ceilingShare = window > 0 ? turnCtx / window : 0
+  const ceilingFired = enoughEvidence && ceilingShare >= CEILING_WARN_SHARE
+  if (ceilingFired) {
+    const high = ceilingShare >= CEILING_HIGH_SHARE
+    out.push(
+      mk(inp.termId, 'context_ceiling', {
+        severity: high ? 'high' : 'medium',
+        finding: 'This session is near its context-window limit',
+        detail: inp.billingReal
+          ? `Recent turns carry ~${k(turnCtx)} tokens — about ${Math.round(ceilingShare * 100)}% of this model's window. Claude Code will auto-compact soon: a summarization pass that itself costs tokens and can lose detail. If your next task is unrelated, /clear now resets cleanly; mid-task, /compact.`
+          : `Recent turns carry ~${k(turnCtx)} tokens — about ${Math.round(ceilingShare * 100)}% of this model's window, re-sent near-max every turn (a big slice of your usage limit). Claude Code will auto-compact soon; if your next task is unrelated, /clear now resets cleanly; mid-task, /compact.`,
+        savingsLowPct: 40,
+        savingsHighPct: 80,
+        basis: `recent-turn context ~${k(turnCtx)} tokens vs ~${k(window)} window; auto-compaction adds a summarization pass on top of near-max per-turn input`,
+        confidence: 'med',
+        evidence: [
+          `recent-turn context ~${k(turnCtx)} tokens (~${Math.round(ceilingShare * 100)}% of the window)`,
+          `session running ~${Math.round(durMin)} min`
+        ],
+        action: { label: 'Send /clear', kind: 'inject_clear', reversible: false }
+      })
+    )
+  }
+
+  // --- un-cleared long session / context bloat ---
+  // Suppressed when context_ceiling already fired (same /clear fix — don't double-nudge).
+  if (!ceilingFired && durMin >= BLOAT_MIN_MINUTES && turnCtx >= BLOAT_MIN_CONTEXT) {
     const high = turnCtx >= BLOAT_HIGH_CONTEXT
     out.push(
       mk(inp.termId, 'context_bloat', {
@@ -218,9 +274,9 @@ export function analyze(inp: AnalyzeInput): CostSuggestion[] {
     percentile(outputs, 95) <= RIGHTSIZE_LIGHT_P95_OUTPUT
   ) {
     const t = totalsOf(cur)
-    const opus = estimateCost(RIGHTSIZE_OPUS, t)
-    const sonnet = estimateCost(RIGHTSIZE_SONNET, t)
-    const haiku = estimateCost(RIGHTSIZE_HAIKU, t)
+    const opus = estimateCost(RIGHTSIZE_OPUS, t, cacheMult)
+    const sonnet = estimateCost(RIGHTSIZE_SONNET, t, cacheMult)
+    const haiku = estimateCost(RIGHTSIZE_HAIKU, t, cacheMult)
     if (opus && opus > 0 && sonnet != null && haiku != null) {
       const sonnetPct = Math.round((1 - sonnet / opus) * 100)
       const haikuPct = Math.round((1 - haiku / opus) * 100)
@@ -251,7 +307,7 @@ export function analyze(inp: AnalyzeInput): CostSuggestion[] {
   // Advisory only (no one-click) — you can't tell from tokens whether the length
   // was warranted, and over-compressing real reasoning hurts accuracy.
   const meanOut = mean(outputs)
-  const outShare = outputCostFraction(cur.model, totalsOf(cur))
+  const outShare = outputCostFraction(cur.model, totalsOf(cur), cacheMult)
   if (
     enoughEvidence &&
     outShare != null &&
@@ -278,5 +334,120 @@ export function analyze(inp: AnalyzeInput): CostSuggestion[] {
     )
   }
 
+  // --- token-attribution hotspot (only when the CLI emits per-source usage) ---
+  // Defensive: absent bySource → nothing. When present, flag a single non-main
+  // source (a subagent, an MCP server) that dominates this session's tokens.
+  const bySource = cur.bySource
+  if (enoughEvidence && bySource && bySource.length > 1) {
+    const tot = (s: SourceUsage): number => s.input + s.output + s.cacheCreation + s.cacheRead
+    const grand = bySource.reduce((n, s) => n + tot(s), 0)
+    const nonMain = bySource
+      .filter((s) => s.source && s.source.toLowerCase() !== 'main')
+      .sort((a, b) => tot(b) - tot(a))[0]
+    if (grand >= ATTR_MIN_TOTAL && nonMain && tot(nonMain) / grand >= ATTR_MIN_SHARE) {
+      const share = Math.round((tot(nonMain) / grand) * 100)
+      out.push(
+        mk(inp.termId, 'attribution_hotspot', {
+          severity: 'low',
+          finding: `"${nonMain.source}" is using ~${share}% of this session's tokens`,
+          detail: `Most of this session's tokens are attributed to ${nonMain.source}, not your main thread. If that's a subagent or MCP server you don't need running here, trimming it is the cleanest saving — it doesn't touch your main work.`,
+          savingsLowPct: Math.round(share * 0.4),
+          savingsHighPct: share,
+          basis: `Claude Code's per-source (query_source) token attribution for this session`,
+          confidence: 'med',
+          evidence: [`${nonMain.source}: ~${k(tot(nonMain))} of ~${k(grand)} attributed tokens (${share}%)`]
+        })
+      )
+    }
+  }
+
   return out.sort(compareSuggestions)
+}
+
+// ---------------------------------------------------------------------------
+// Fleet analysis — the cross-terminal signal a single session can't see.
+
+export interface FleetTermInput {
+  termId: string
+  label?: string
+  history: UsageSample[]
+}
+
+export interface FleetAnalyzeInput {
+  now: number
+  billingReal: boolean
+  terms: FleetTermInput[]
+  /** reset description if any terminal actually hit a usage limit (scraped) */
+  resetLabel?: string | null
+}
+
+/** Recent token burn (tokens/min) over the last `windowMs`, or 0 if the term's
+ *  latest sample is older than `activeMs` (idle → not burning). */
+function recentBurnPerMin(h: UsageSample[], now: number, windowMs: number, activeMs: number): number {
+  if (h.length < 2) return 0
+  const last = h[h.length - 1]
+  if (now - last.t > activeMs) return 0
+  const cutoff = last.t - windowMs
+  let a = h[0]
+  for (let i = h.length - 1; i >= 0; i--) {
+    a = h[i]
+    if (h[i].t <= cutoff) break
+  }
+  const dt = (last.t - a.t) / 60_000
+  if (dt <= 0) return 0
+  const toks =
+    last.input - a.input + (last.output - a.output) + (last.cacheCreation - a.cacheCreation) + (last.cacheRead - a.cacheRead)
+  return toks > 0 ? toks / dt : 0
+}
+
+/**
+ * Pure fleet analysis: several terminals on Opus at once. On a subscription this
+ * is what burns the weekly Opus cap fastest — and it's invisible to any single
+ * Claude Code session, so it's the signal a multi-terminal manager uniquely adds.
+ * Honest by construction: reports concurrency + combined burn (+ the reset time
+ * ONLY when a limit was actually scraped), never a fabricated "you'll hit it at 3pm".
+ */
+export function analyzeFleet(inp: FleetAnalyzeInput): FleetSuggestion | null {
+  const active = inp.terms
+    .map((t) => {
+      const last = t.history[t.history.length - 1]
+      return {
+        termId: t.termId,
+        label: t.label,
+        model: (last?.model ?? '').toLowerCase(),
+        burnPerMin: recentBurnPerMin(t.history, inp.now, FLEET_WINDOW_MS, FLEET_ACTIVE_MS)
+      }
+    })
+    .filter((t) => t.model.startsWith('claude-opus') && t.burnPerMin >= FLEET_BURN_MIN)
+    .sort((a, b) => b.burnPerMin - a.burnPerMin)
+
+  if (active.length < FLEET_MIN_OPUS_TERMS) return null
+
+  const combined = Math.round(active.reduce((n, t) => n + t.burnPerMin, 0))
+  const n = active.length
+  const severity: FleetSuggestion['severity'] = n >= 3 ? 'high' : 'medium'
+  const reset = inp.resetLabel ? ` Your ${inp.resetLabel}.` : ''
+  const detail = inp.billingReal
+    ? `${n} terminals are running on Opus at once (~${k(combined)} tokens/min combined). Parallel Opus is your biggest per-token burn — moving any routine terminals to Sonnet cuts ~40% on those tokens.${reset}`
+    : `${n} terminals are running on Opus at once (~${k(combined)} tokens/min combined). On a subscription, parallel Opus is what burns your weekly Opus cap fastest — move any routine terminals to Sonnet (~1.7× cheaper on tokens) to stretch your headroom.${reset}`
+
+  return {
+    kind: 'fleet_opus_burn',
+    severity,
+    finding: `${n} terminals on Opus at once`,
+    detail,
+    combinedBurnPerMin: combined,
+    terms: active.map((t) => ({
+      termId: t.termId,
+      label: t.label,
+      model: t.model,
+      burnPerMin: Math.round(t.burnPerMin)
+    })),
+    resetLabel: inp.resetLabel ?? null,
+    basis: 'recent per-terminal token burn over the last ~5 min; Opus lists at 5/25 vs Sonnet 3/15 per MTok',
+    evidence: active.map(
+      (t) => `${t.label ? t.label + ' ' : ''}(${t.termId}) on ${t.model || 'opus'} ~${k(Math.round(t.burnPerMin))}/min`
+    ),
+    sig: `${severity}:${n}:${Math.round(combined / 1000)}k:${inp.resetLabel ?? ''}`
+  }
 }

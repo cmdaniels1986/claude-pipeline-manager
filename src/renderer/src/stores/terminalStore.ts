@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CostSuggestion, ResumeState, TermUsage } from '../../../shared/types'
+import type { CostSuggestion, FleetSuggestion, ResumeState, TermUsage } from '../../../shared/types'
 
 export interface PaneRec {
   paneId: string
@@ -28,6 +28,9 @@ interface TerminalStore {
   /** live cost-saving suggestions per terminal (from the main-process advisor) */
   suggestions: Record<string, CostSuggestion[]>
   setSuggestions: (termId: string, suggestions: CostSuggestion[]) => void
+  /** the single cross-terminal fleet suggestion (e.g. parallel-Opus burn), or null */
+  fleet: FleetSuggestion | null
+  setFleet: (fleet: FleetSuggestion | null) => void
   resume: Record<string, ResumeState>
   setResume: (state: ResumeState) => void
   /** true when sessions bill per-token (API key) — cost is real, not notional */
@@ -73,6 +76,8 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   suggestions: {},
   setSuggestions: (termId, suggestions) =>
     set((s) => ({ suggestions: { ...s.suggestions, [termId]: suggestions } })),
+  fleet: null,
+  setFleet: (fleet) => set({ fleet }),
   resume: {},
   setResume: (state) => set((s) => ({ resume: { ...s.resume, [state.termId]: state } })),
   billingReal: false,
@@ -210,6 +215,9 @@ if (typeof window !== 'undefined' && window.api) {
   })
   window.api.onAdvisorChanged(({ termId, suggestions }) => {
     useTerminalStore.getState().setSuggestions(termId, suggestions)
+  })
+  window.api.onAdvisorFleet(({ suggestion }) => {
+    useTerminalStore.getState().setFleet(suggestion)
   })
   window.api.onTermActivity(({ termId, busy }) => {
     useTerminalStore.getState().setBusy(termId, busy)

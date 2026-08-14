@@ -45,7 +45,7 @@ const nowOf = (h) => h[h.length - 1].t
 const kinds = (list) => list.map((s) => s.kind).sort()
 const withModel = (h, model) => h.map((s) => ({ ...s, model }))
 
-const { analyze } = await load('src/main/usage/advisor.ts', 'advisor')
+const { analyze, analyzeFleet } = await load('src/main/usage/advisor.ts', 'advisor')
 
 // A) healthy short well-cached session → nothing
 {
@@ -173,6 +173,123 @@ const { CostAdvisor } = await load('src/main/usage/CostAdvisor.ts', 'costAdvisor
     false
   )
   check('dismissed suggestion does not resurrect', calls.length === 2)
+}
+
+// K) context near the window ceiling (Haiku 200k) → context_ceiling, supersedes bloat
+{
+  const h = withModel(
+    ramp({
+      samples: 40,
+      stepMs: 60_000,
+      perStep: { input: 1500, cacheRead: 5000, cacheCreation: 200, output: 1200 },
+      tweak: (i, acc) => {
+        if (i === 20) acc.cacheRead += 185_000 // one turn fills most of Haiku's 200k window
+      }
+    }),
+    'claude-haiku-4-5'
+  )
+  const r = analyze({ termId: 't', now: nowOf(h), billingReal: false, history: h })
+  check('K near-ceiling Haiku → includes context_ceiling', kinds(r).includes('context_ceiling'))
+  check('K context_ceiling supersedes context_bloat', !kinds(r).includes('context_bloat'))
+  const c = r.find((s) => s.kind === 'context_ceiling')
+  check('K context_ceiling is high severity + carries /clear', c?.severity === 'high' && c?.action?.kind === 'inject_clear')
+}
+
+// L) a subagent dominates attributed tokens → attribution_hotspot (only when bySource present)
+{
+  const h = withModel(
+    ramp({ samples: 10, stepMs: 25_000, perStep: { input: 500, cacheRead: 8000, cacheCreation: 200, output: 400 } }),
+    'claude-sonnet-4-6'
+  )
+  h[h.length - 1].bySource = [
+    { source: 'main', input: 20_000, output: 8000, cacheRead: 2000, cacheCreation: 0 },
+    { source: 'subagent', input: 60_000, output: 30_000, cacheRead: 10_000, cacheCreation: 0 }
+  ]
+  const r = analyze({ termId: 't', now: nowOf(h), billingReal: false, history: h })
+  const a = r.find((s) => s.kind === 'attribution_hotspot')
+  check('L subagent hotspot → attribution_hotspot fires', !!a)
+  check('L attribution_hotspot is low severity + advisory-only', a?.severity === 'low' && !a?.action)
+  const h2 = withModel(
+    ramp({ samples: 10, stepMs: 25_000, perStep: { input: 500, cacheRead: 8000, cacheCreation: 200, output: 400 } }),
+    'claude-sonnet-4-6'
+  )
+  const r2 = analyze({ termId: 't', now: nowOf(h2), billingReal: false, history: h2 })
+  check('L no bySource → no attribution_hotspot', !kinds(r2).includes('attribution_hotspot'))
+}
+
+// ---- fleet: several terminals on Opus at once ----
+{
+  const mkOpus = () =>
+    withModel(
+      ramp({ samples: 10, stepMs: 30_000, perStep: { input: 3000, cacheRead: 5000, cacheCreation: 500, output: 2000 } }),
+      'claude-opus-4-8'
+    )
+  const a = mkOpus()
+  const b = mkOpus()
+  const now = nowOf(a)
+  const f = analyzeFleet({ now, billingReal: false, terms: [{ termId: 'a', history: a }, { termId: 'b', history: b }] })
+  check('fleet: two Opus terminals → fleet_opus_burn', f?.kind === 'fleet_opus_burn')
+  check('fleet: names both terminals, medium severity', f?.terms.length === 2 && f?.severity === 'medium')
+  check('fleet: reports a combined burn rate', (f?.combinedBurnPerMin ?? 0) > 0)
+
+  const sonnet = withModel(
+    ramp({ samples: 10, stepMs: 30_000, perStep: { input: 3000, cacheRead: 5000, output: 2000 } }),
+    'claude-sonnet-4-6'
+  )
+  const f2 = analyzeFleet({ now, billingReal: false, terms: [{ termId: 'a', history: a }, { termId: 's', history: sonnet }] })
+  check('fleet: one Opus + one Sonnet → no fleet card', f2 === null)
+
+  const f3 = analyzeFleet({
+    now,
+    billingReal: false,
+    terms: [{ termId: 'a', history: a }, { termId: 'b', history: b }],
+    resetLabel: 'weekly limit · resets Mon 12:00am'
+  })
+  check('fleet: overlays a scraped reset label when present', !!f3 && f3.detail.includes('resets Mon'))
+}
+
+// ---- dismissal store: soft-snooze, auto-retire, mute (persistence semantics) ----
+const { DismissalStore } = await load('src/main/usage/dismissalStore.ts', 'dismissal')
+{
+  const ds = new DismissalStore() // in-memory (no file)
+  ds.record('cache_off', 'session', 1000)
+  check('store: a plain dismiss soft-snoozes the kind', ds.isSuppressed('cache_off', 1000 + 30 * 60_000))
+  check('store: soft-snooze expires while count < retire', !ds.isSuppressed('cache_off', 1000 + 2 * 60 * 60_000))
+  ds.record('cache_off', 'session', 2000)
+  ds.record('cache_off', 'session', 3000)
+  check('store: auto-retire after 3 dismissals, regardless of time', ds.isSuppressed('cache_off', 1000 + 100 * 60 * 60_000))
+  ds.record('verbose_output', 'mute', 1000)
+  check('store: mute suppresses immediately and forever', ds.isSuppressed('verbose_output', 1000 + 9999 * 60 * 60_000))
+}
+
+// ---- CostAdvisor honours mute end-to-end ----
+{
+  const seen = []
+  const adv = new CostAdvisor((_t, s) => seen.push(s))
+  const trace = ramp({ samples: 10, stepMs: 25_000, perStep: { input: 22_000, cacheCreation: 100, output: 3000 } })
+  const rec = (s, t) =>
+    adv.record(
+      { termId: 't', inputTokens: s.input, outputTokens: s.output, cacheCreationTokens: s.cacheCreation, cacheReadTokens: s.cacheRead, contextTokens: 0, messages: 0, costUsd: null },
+      t,
+      false
+    )
+  for (const s of trace) rec(s, 100_000 + s.t)
+  check('mute: cache_off is active before muting', seen[seen.length - 1].some((x) => x.kind === 'cache_off'))
+  adv.dismiss('t', 'cache_off', 'mute')
+  check('mute: card clears immediately', !seen[seen.length - 1].some((x) => x.kind === 'cache_off'))
+  const last = trace[trace.length - 1]
+  rec({ input: last.input + 22_000, output: last.output, cacheCreation: last.cacheCreation, cacheRead: 0 }, 100_000 + last.t + 25_000)
+  check('mute: kind never resurfaces', !seen[seen.length - 1].some((x) => x.kind === 'cache_off'))
+}
+
+// ---- pricing: subscription pays the 1-hour (2×) cache-write premium ----
+const { cacheWriteMultFor, estimateCost } = await load('src/main/usage/pricing.ts', 'pricing')
+{
+  check('pricing: subscription 2× vs API 1.25×', cacheWriteMultFor(false) === 2 && cacheWriteMultFor(true) === 1.25)
+  const t = { input: 0, output: 0, cacheCreation: 1_000_000, cacheRead: 0 }
+  const sub = estimateCost('claude-opus-4-8', t, cacheWriteMultFor(false))
+  const api = estimateCost('claude-opus-4-8', t, cacheWriteMultFor(true))
+  check('pricing: 2× cache-write costs more than 1.25×', sub > api && Math.abs(sub - 10) < 1e-9 && Math.abs(api - 6.25) < 1e-9)
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

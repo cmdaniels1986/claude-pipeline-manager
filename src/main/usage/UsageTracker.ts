@@ -9,6 +9,12 @@ import { estimateCost } from './pricing'
  * metric attribute session.id === termId. Cumulative counters → latest value
  * per (session, type) wins.
  */
+interface SourceAgg {
+  input: number
+  output: number
+  cacheRead: number
+  cacheCreation: number
+}
 interface SessionUsage {
   model?: string
   input: number
@@ -17,6 +23,9 @@ interface SessionUsage {
   cacheCreation: number
   costUsd: number | null
   lastTurnTokens: number
+  /** per-source subtotals when the CLI tags token.usage with query_source /
+   *  mcp_server.name; stays empty on builds that don't emit those attributes */
+  bySource: Map<string, SourceAgg>
 }
 
 interface OtlpValue {
@@ -123,6 +132,17 @@ export class UsageTracker {
               else if (type === 'output') s.output = acc(s.output)
               else if (type === 'cacheRead') s.cacheRead = acc(s.cacheRead)
               else if (type === 'cacheCreation') s.cacheCreation = acc(s.cacheCreation)
+              // attribute the same point to its source, when the CLI tags it —
+              // lets the advisor flag "a subagent/MCP server is N% of your tokens"
+              const source = this.attr(dp, 'query_source') ?? this.attr(dp, 'mcp_server.name')
+              if (source && type) {
+                const bs = s.bySource.get(source) ?? { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
+                if (type === 'input') bs.input = cumulative ? val : bs.input + val
+                else if (type === 'output') bs.output = cumulative ? val : bs.output + val
+                else if (type === 'cacheRead') bs.cacheRead = cumulative ? val : bs.cacheRead + val
+                else if (type === 'cacheCreation') bs.cacheCreation = cumulative ? val : bs.cacheCreation + val
+                s.bySource.set(source, bs)
+              }
               touched.add(sid)
             }
           }
@@ -135,7 +155,7 @@ export class UsageTracker {
   private session(sid: string): SessionUsage {
     let s = this.sessions.get(sid)
     if (!s) {
-      s = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, costUsd: null, lastTurnTokens: 0 }
+      s = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, costUsd: null, lastTurnTokens: 0, bySource: new Map() }
       this.sessions.set(sid, s)
     }
     return s
@@ -153,6 +173,9 @@ export class UsageTracker {
         cacheCreation: s.cacheCreation,
         cacheRead: s.cacheRead
       })
+    const bySource = s.bySource.size
+      ? [...s.bySource.entries()].map(([source, v]) => ({ source, ...v }))
+      : undefined
     this.onUsage({
       termId: sid,
       model: s.model,
@@ -164,7 +187,8 @@ export class UsageTracker {
       // fullness as the input side of the running totals
       contextTokens: s.input + s.cacheRead + s.cacheCreation,
       messages: 0,
-      costUsd: cost
+      costUsd: cost,
+      bySource
     })
   }
 

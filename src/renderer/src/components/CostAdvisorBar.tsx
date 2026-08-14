@@ -39,8 +39,15 @@ function Card({ s }: { s: CostSuggestion }): React.JSX.Element {
         <span className="spacer" />
         <button
           className="icon-button"
-          title="Dismiss — don't show this again this session"
-          onClick={() => void window.api.advisorDismiss(s.termId, s.kind)}
+          title="Mute this tip — never show it again"
+          onClick={() => void window.api.advisorDismiss(s.termId, s.kind, 'mute')}
+        >
+          🔕
+        </button>
+        <button
+          className="icon-button"
+          title="Dismiss for now (repeatedly dismissing retires the tip)"
+          onClick={() => void window.api.advisorDismiss(s.termId, s.kind, 'session')}
         >
           ✕
         </button>

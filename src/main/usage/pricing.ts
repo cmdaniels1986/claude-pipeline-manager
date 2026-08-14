@@ -24,8 +24,19 @@ const RATES: { prefix: string; rate: Rate }[] = [
   { prefix: 'claude-haiku', rate: { input: 1, output: 5 } }
 ]
 
-const CACHE_WRITE_MULT = 1.25
+/**
+ * Cache-write premium over base input price. The TTL Claude Code requests differs
+ * by billing mode, so the multiplier does too: a subscription (Max/Pro) gets the
+ * 1-hour TTL (2×), an API key gets the 5-minute TTL (1.25×). Read is always 0.1×.
+ */
+export const CACHE_WRITE_MULT_5MIN = 1.25
+export const CACHE_WRITE_MULT_1H = 2
 const CACHE_READ_MULT = 0.1
+
+/** The cache-write multiplier Claude Code actually incurs for this billing mode. */
+export function cacheWriteMultFor(billingReal: boolean): number {
+  return billingReal ? CACHE_WRITE_MULT_5MIN : CACHE_WRITE_MULT_1H
+}
 
 export interface TokenTotals {
   input: number
@@ -41,15 +52,20 @@ function rateFor(model: string | undefined): Rate | null {
 }
 
 /** Estimated USD cost for accumulated token totals on a model. Null if the
- *  model isn't in the pricing table. */
-export function estimateCost(model: string | undefined, t: TokenTotals): number | null {
+ *  model isn't in the pricing table. `cacheWriteMult` defaults to the 5-minute
+ *  TTL premium; pass `cacheWriteMultFor(billingReal)` to match a subscription. */
+export function estimateCost(
+  model: string | undefined,
+  t: TokenTotals,
+  cacheWriteMult: number = CACHE_WRITE_MULT_5MIN
+): number | null {
   const rate = rateFor(model)
   if (!rate) return null
   const perM = (n: number, price: number): number => (n / 1_000_000) * price
   return (
     perM(t.input, rate.input) +
     perM(t.output, rate.output) +
-    perM(t.cacheCreation, rate.input * CACHE_WRITE_MULT) +
+    perM(t.cacheCreation, rate.input * cacheWriteMult) +
     perM(t.cacheRead, rate.input * CACHE_READ_MULT)
   )
 }
@@ -58,14 +74,18 @@ export function estimateCost(model: string | undefined, t: TokenTotals): number 
  *  Output bills ~5x input, so a high fraction means response volume — not the
  *  re-sent context — is what's driving spend. Null if the model isn't priced
  *  or the mix has no cost. */
-export function outputCostFraction(model: string | undefined, t: TokenTotals): number | null {
+export function outputCostFraction(
+  model: string | undefined,
+  t: TokenTotals,
+  cacheWriteMult: number = CACHE_WRITE_MULT_5MIN
+): number | null {
   const rate = rateFor(model)
   if (!rate) return null
   const perM = (n: number, price: number): number => (n / 1_000_000) * price
   const outputCost = perM(t.output, rate.output)
   const inputCost =
     perM(t.input, rate.input) +
-    perM(t.cacheCreation, rate.input * CACHE_WRITE_MULT) +
+    perM(t.cacheCreation, rate.input * cacheWriteMult) +
     perM(t.cacheRead, rate.input * CACHE_READ_MULT)
   const total = outputCost + inputCost
   return total > 0 ? outputCost / total : null

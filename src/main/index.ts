@@ -2,7 +2,7 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
-import type { CostSuggestionAction, CostSuggestionKind, CreateTermOptions, Diagnostics, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
+import type { CostSuggestionAction, CostSuggestionKind, CreateTermOptions, Diagnostics, DismissMode, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { computeChangedNodes } from './graph/gitScope'
@@ -452,9 +452,12 @@ function registerIpc(): void {
   ipcMain.handle('resume:cancel', (_e, termId: string) => resumeManager.cancel(termId))
 
   // cost advisor — dismiss a suggestion, or apply its one-click fix
-  ipcMain.handle('advisor:dismiss', (_e, { termId, kind }: { termId: string; kind: CostSuggestionKind }) => {
-    costAdvisor.dismiss(termId, kind)
-  })
+  ipcMain.handle(
+    'advisor:dismiss',
+    (_e, { termId, kind, mode }: { termId: string; kind: CostSuggestionKind; mode?: DismissMode }) => {
+      costAdvisor.dismiss(termId, kind, mode)
+    }
+  )
   ipcMain.handle(
     'advisor:apply',
     (_e, { termId, action }: { termId: string; action: CostSuggestionAction }) => {
@@ -478,7 +481,13 @@ function registerIpc(): void {
 
   // startup memory check — confirm the user's cross-project memory is found and
   // will be injected into terminals (surfaces the otherwise-silent injection)
-  ipcMain.handle('memory:scan', () => scanMemoryBanks())
+  ipcMain.handle('memory:scan', () => {
+    // surface the fixed context floor the app itself injects into every terminal
+    // (graph protocol + all memory banks), so the user sees what the tool adds
+    const scan = scanMemoryBanks()
+    const injectedChars = buildProtocolContent().length
+    return { ...scan, injectedChars, injectedTokensApprox: Math.round(injectedChars / 4) }
+  })
 
   ipcMain.handle('app:diagnostics', (): Diagnostics => {
     return {
@@ -554,8 +563,11 @@ app.whenReady().then(async () => {
   )
   await mcpServer.start()
 
-  costAdvisor = new CostAdvisor((termId, suggestions) =>
-    sendToTermHost(termId, 'advisor:changed', { termId, suggestions })
+  costAdvisor = new CostAdvisor(
+    (termId, suggestions) => sendToTermHost(termId, 'advisor:changed', { termId, suggestions }),
+    // fleet card is cross-terminal — broadcast to every window, not one term host
+    (suggestion) => broadcast('advisor:fleet', { suggestion }),
+    { dir: app.getPath('userData') }
   )
   usageTracker = new UsageTracker((usage) => {
     sendToTermHost(usage.termId, 'term:usage', usage)
@@ -594,7 +606,12 @@ app.whenReady().then(async () => {
     inject: (termId, text) => ptyManager.injectPrompt(termId, text, true),
     relaunchResume: (termId) => ptyManager.relaunchResume(termId),
     isAlive: (termId) => ptyManager.isAlive(termId),
-    onState: (state) => broadcast('resume:changed', state),
+    onState: (state) => {
+      broadcast('resume:changed', state)
+      // feed scraped reset times to the advisor so the fleet card can overlay a
+      // real reset time (never a fabricated one)
+      costAdvisor.noteReset(state.termId, state.limited ? state.resetLabel : null)
+    },
     onResumed: (termId) => sendToTermHost(termId, 'term:resumed', termId)
   })
 

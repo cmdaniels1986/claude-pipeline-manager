@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Diagnostics, ProjectInfo, UpdateStatus } from '../../shared/types'
+import { FleetAdvisorBar } from './components/FleetAdvisorBar'
 import { GraphDock } from './components/GraphDock'
 import { MemoryCheck } from './components/MemoryCheck'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
@@ -177,6 +178,8 @@ export default function App(): React.JSX.Element {
       </header>
 
       {showMemory && <MemoryCheck onClose={() => setShowMemory(false)} />}
+
+      <FleetAdvisorBar />
 
       {update && update.behind > 0 && (
         <div className="update-banner">

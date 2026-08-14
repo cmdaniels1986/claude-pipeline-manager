@@ -258,6 +258,12 @@ export interface MemoryScan {
   ok: boolean
   /** why the check failed / what to do, when !ok */
   reason?: string
+  /** raw character count of everything the app injects into every terminal's
+   *  system prompt (graph protocol + all memory banks) */
+  injectedChars?: number
+  /** ~token estimate of that injected prefix (chars/4), the fixed context floor
+   *  each terminal carries — surfaced so the user sees what the tool itself adds */
+  injectedTokensApprox?: number
 }
 
 export interface Diagnostics {
@@ -302,6 +308,16 @@ export interface UpdateCheckResult {
   reason?: string
 }
 
+/** Token subtotals attributed to one query source (main/subagent/auxiliary),
+ *  when Claude Code's telemetry breaks usage down by `query_source`. */
+export interface SourceUsage {
+  source: string
+  input: number
+  output: number
+  cacheRead: number
+  cacheCreation: number
+}
+
 export interface TermUsage {
   termId: string
   model?: string
@@ -314,6 +330,9 @@ export interface TermUsage {
   messages: number
   /** estimated USD; null when the model's pricing is unknown */
   costUsd: number | null
+  /** per-source token subtotals when the CLI attributes usage by query_source
+   *  (main/subagent/auxiliary); absent on builds that don't emit the attribute */
+  bySource?: SourceUsage[]
 }
 
 // ---- cost advisor (session-monitoring suggestions) ------------------------
@@ -322,8 +341,10 @@ export type CostSuggestionKind =
   | 'cache_off'
   | 'cache_thrash'
   | 'context_bloat'
+  | 'context_ceiling'
   | 'model_rightsize'
   | 'verbose_output'
+  | 'attribution_hotspot'
 
 /** a one-click remediation the app can perform for a suggestion */
 export interface CostSuggestionAction {
@@ -365,4 +386,34 @@ export interface CostSuggestion {
 export interface AdvisorChangedPayload {
   termId: string
   suggestions: CostSuggestion[]
+}
+
+/** How the user dismissed a suggestion: 'session' = hide for now (also nudges
+ *  the kind toward auto-retire), 'snooze' = hide the kind for a while,
+ *  'mute' = never show this kind again. */
+export type DismissMode = 'session' | 'snooze' | 'mute'
+
+/** A fleet-level (cross-terminal) suggestion — the thing a multi-terminal
+ *  manager can see that a single Claude Code session cannot. Currently: several
+ *  terminals on Opus at once, which on a subscription is what burns the weekly
+ *  Opus cap fastest. */
+export interface FleetSuggestion {
+  kind: 'fleet_opus_burn'
+  severity: 'high' | 'medium' | 'low'
+  finding: string
+  detail: string
+  /** combined recent token burn across the contributing terminals (tokens/min) */
+  combinedBurnPerMin: number
+  /** the terminals driving it, for the evidence list */
+  terms: { termId: string; label?: string; model: string; burnPerMin: number }[]
+  /** reset description if any terminal has actually hit a usage limit (scraped) */
+  resetLabel?: string | null
+  evidence: string[]
+  basis: string
+  /** stable-ish identity for renderer-side dedup/dismiss */
+  sig: string
+}
+
+export interface FleetAdvisorPayload {
+  suggestion: FleetSuggestion | null
 }

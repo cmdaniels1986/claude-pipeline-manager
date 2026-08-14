@@ -127,6 +127,13 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
               only sees one at a time, so this app injects all {bankCount} together to give you everything at once.
             </div>
           )}
+          {scan?.injectedTokensApprox != null && (
+            <div className="mem-others-note">
+              Injected into every terminal: ~{scan.injectedTokensApprox.toLocaleString()} tokens (graph protocol +{' '}
+              {bankCount} memory {bankCount === 1 ? 'store' : 'stores'}). It's a stable prefix, so after the first turn
+              it's served from cache (~10× cheaper) rather than re-billed.
+            </div>
+          )}
         </div>
       )}
 
