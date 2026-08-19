@@ -7,7 +7,9 @@ const RESUME_BOOT_MS = 3000 // let a relaunched session boot before injecting
 const RESET_GRACE_MS = 3000 // send a little after the stated reset time
 const FALLBACK_RETRY_MS = 10 * 60_000 // retry cadence when the reset time couldn't be parsed
 const MAX_WAIT_MS = 8 * 60 * 60_000 // never schedule further out than this
-const HINT = /hit your|usage limit|limit reached/i
+// cheap pre-filter before running full detection; must cover every wording family
+// detectUsageLimit can match (incl. the 2.1.x "out of usage credits" system)
+const HINT = /hit your|usage limit|limit reached|out of usage|usage credits/i
 
 export interface ResumeDeps {
   inject: (termId: string, text: string) => void

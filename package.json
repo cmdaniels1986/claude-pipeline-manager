@@ -10,6 +10,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "test:limits": "esbuild src/main/usage/limitDetect.ts --format=esm --outfile=out/.limitdetect-under-test.mjs --log-level=warning && node scripts/verify-limit-detect.mjs",
     "pack:dir": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder --win"
   },

@@ -2,10 +2,19 @@
  * Detects a Claude Code "usage limit reached" state from raw PTY output and, when
  * present, works out when the limit resets. Claude Code has no machine-readable
  * signal for this (it just prints a line in the TUI), so we scrape the text. The
- * wording is matched tolerantly across the variants we know of, e.g.:
+ * wording changes across CLI versions; blocked-state variants known through 2.1.x:
  *   "You've hit your session limit · resets 3:45pm (America/New_York)"
  *   "You've hit your weekly limit · resets Mon 12:00am (Europe/Dublin)"
+ *   "You've hit your monthly spend limit."
+ *   "You've hit your org's monthly usage limit · resets Oct 9, 10:59am"
  *   "Claude usage limit reached · resets at 3pm"
+ *   "You're out of usage credits · resets 3am"            (credits system, 2.1.x)
+ *   "Your org is out of usage · add funds to continue"
+ * Reset times may be absolute ("resets 3:45pm"), dated ("resets Oct 9, 10:59am"),
+ * or relative ("resets in 2h 4m").
+ * NOT treated as blocked: "You've hit your fast limit" (fast mode just falls back
+ * to normal speed), "Context limit reached" (compaction, not usage), and the
+ * "You're close to ..." / "You're now using ..." warnings.
  */
 
 const ESC = String.fromCharCode(27)
@@ -20,14 +29,24 @@ export function stripAnsi(s: string): string {
 }
 
 const DOW: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
+const MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
+}
 
-// the session is BLOCKED (not merely a "approaching your limit" warning)
+// the session is BLOCKED (not merely an "approaching your limit" warning); the
+// fast-limit banner is excluded because fast mode just falls back to normal speed
 const BLOCK_RE =
-  /(?:you'?ve hit your (session|weekly|opus) limit|usage limit reached|reached your usage limit)/i
+  /you['’]?ve hit your ((?!fast\b)[a-z0-9'’ -]{0,30}?limit)|(?:you['’]?re|your org is) out of usage(?: credits)?|usage limit reached|reached your usage limit/i
 
-// "resets [at] [Mon] 3[:45]pm (Area/City)" — weekday and timezone optional
-const RESET_RE =
-  /reset[s]?(?:\s+at)?\s+(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([^)]+)\))?/i
+// "resets [at] [Mon[,]] [Oct 9[,]] 3[:45]pm (Area/City)" — weekday, date and timezone optional
+const RESET_ABS_RE =
+  /reset[s]?(?:\s+at)?\s+(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+)?(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([^)]+)\))?/i
+
+// "resets in 2h 4m" / "resets in 1 day 3 hrs" — relative countdown
+const RESET_REL_RE =
+  /reset[s]?\s+in\s+((?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?)\b[\s,]*)+)/i
+const REL_UNIT_RE = /(\d+)\s*(d|h|m|s)/gi
+const REL_MS: Record<string, number> = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1000 }
 
 export interface LimitInfo {
   type: string
@@ -39,23 +58,40 @@ export interface LimitInfo {
 
 /** Returns limit info if `text` shows a usage-limit block, else null. `now` is injectable for tests. */
 export function detectUsageLimit(text: string, now: Date = new Date()): LimitInfo | null {
-  const clean = stripAnsi(text)
+  // collapse whitespace so TUI line-wraps inside the message can't break a match
+  const clean = stripAnsi(text).replace(/\s+/g, ' ')
   const block = BLOCK_RE.exec(clean)
   if (!block) return null
 
-  const type = block[1] ? `${block[1].toLowerCase()} limit` : 'usage limit'
-  const reset = RESET_RE.exec(clean)
-  if (!reset) return { type, resetAt: null, resetLabel: `${type} reached` }
+  const type = block[1]
+    ? block[1].toLowerCase()
+    : /out of usage/i.test(block[0])
+      ? 'usage credits'
+      : 'usage limit'
 
-  const [, dow, hh, mm, ampm, tz] = reset
-  let hour = parseInt(hh, 10) % 12
-  if (ampm.toLowerCase() === 'pm') hour += 12
-  const minute = mm ? parseInt(mm, 10) : 0
-  const zone = tz?.trim() || localZone()
-  const resetAt = zonedNextOccurrence(now, dow ? DOW[dow.toLowerCase()] : null, hour, minute, zone)
+  const abs = RESET_ABS_RE.exec(clean)
+  if (abs) {
+    const [, dow, mon, day, hh, mm, ampm, tz] = abs
+    let hour = parseInt(hh, 10) % 12
+    if (ampm.toLowerCase() === 'pm') hour += 12
+    const minute = mm ? parseInt(mm, 10) : 0
+    const zone = tz?.trim() || localZone()
+    const resetAt =
+      mon && day
+        ? zonedNextDate(now, MONTHS[mon.toLowerCase()], parseInt(day, 10), hour, minute, zone)
+        : zonedNextOccurrence(now, dow ? DOW[dow.toLowerCase()] : null, hour, minute, zone)
+    return { type, resetAt, resetLabel: `${type} · ${abs[0].trim()}` }
+  }
 
-  const label = `${type} · resets ${dow ? dow[0].toUpperCase() + dow.slice(1, 3).toLowerCase() + ' ' : ''}${hh}${mm ? ':' + mm : ''}${ampm.toLowerCase()}${tz ? ` (${tz.trim()})` : ''}`
-  return { type, resetAt, resetLabel: label }
+  const rel = RESET_REL_RE.exec(clean)
+  if (rel) {
+    let ms = 0
+    for (const m of rel[1].matchAll(REL_UNIT_RE)) ms += parseInt(m[1], 10) * REL_MS[m[2].toLowerCase()]
+    if (ms > 0) return { type, resetAt: now.getTime() + ms, resetLabel: `${type} · ${rel[0].trim()}` }
+  }
+
+  const label = type === 'usage credits' ? 'out of usage credits' : `${type} reached`
+  return { type, resetAt: null, resetLabel: label }
 }
 
 function localZone(): string {
@@ -111,6 +147,22 @@ function zonedWallClockToUtc(y: number, mo: number, d: number, h: number, mi: nu
   const off2 = zoneOffset(utc, tz)
   if (guess - off2 !== utc) utc = guess - off2
   return utc
+}
+
+/** Next occurrence (epoch ms) of a month/day wall-clock time in `tz` — this year,
+ *  or next year if that instant has already passed. */
+function zonedNextDate(
+  now: Date,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  tz: string
+): number {
+  const cur = partsInZone(now.getTime(), tz)
+  let at = zonedWallClockToUtc(cur.y, month, day, hour, minute, tz)
+  if (at <= now.getTime()) at = zonedWallClockToUtc(cur.y + 1, month, day, hour, minute, tz)
+  return at
 }
 
 /** Next occurrence (epoch ms) of a wall-clock time in `tz`; if `targetDow` is set,
