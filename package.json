@@ -1,6 +1,6 @@
 {
   "name": "claude-pipeline-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop manager for Claude Code: multi-terminal panes, agent launcher, live pipeline graph",
   "author": "Chad Daniels",
   "main": "./out/main/index.js",
