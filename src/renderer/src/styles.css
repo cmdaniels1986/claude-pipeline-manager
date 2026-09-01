@@ -862,6 +862,22 @@ button.toggled {
 .tab.active .tab-model {
   color: var(--text);
 }
+/* current thinking / reasoning-effort level (global, from ~/.claude/settings.json) */
+.tab-effort {
+  font-size: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  white-space: nowrap;
+}
+.tab.active.colored .tab-effort {
+  color: inherit;
+  background: rgba(0, 0, 0, 0.28);
+  border-color: transparent;
+}
 .tab-close {
   padding: 0 3px;
 }

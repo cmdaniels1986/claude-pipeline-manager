@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CostSuggestion, FleetSuggestion, ResumeState, TermUsage } from '../../../shared/types'
+import type { CostSuggestion, EffortState, FleetSuggestion, ResumeState, TermUsage } from '../../../shared/types'
 
 export interface PaneRec {
   paneId: string
@@ -35,6 +35,9 @@ interface TerminalStore {
   setResume: (state: ResumeState) => void
   /** true when sessions bill per-token (API key) — cost is real, not notional */
   billingReal: boolean
+  /** current Claude Code thinking level (global), or null when default/unknown */
+  effort: EffortState | null
+  setEffort: (effort: EffortState) => void
   addPane: (opts: {
     cwd: string
     agentName?: string
@@ -81,6 +84,8 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   resume: {},
   setResume: (state) => set((s) => ({ resume: { ...s.resume, [state.termId]: state } })),
   billingReal: false,
+  effort: null,
+  setEffort: (effort) => set({ effort }),
   addPane: (opts) =>
     set((s) => {
       const paneId = `pane-${++paneCounter}`
@@ -229,6 +234,8 @@ if (typeof window !== 'undefined' && window.api) {
     for (const s of states) store.setResume(s)
   })
   void window.api.getDiagnostics().then((d) => useTerminalStore.setState({ billingReal: d.apiKeyBilling }))
+  window.api.onEffortChanged((effort) => useTerminalStore.getState().setEffort(effort))
+  void window.api.effortGet().then((effort) => useTerminalStore.getState().setEffort(effort))
   ;(window as unknown as Record<string, unknown>).__termDebug = {
     tail: (termId: string, chars = 4000): string => (debugTails.get(termId) ?? '').slice(-chars)
   }

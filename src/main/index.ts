@@ -18,6 +18,7 @@ import { exportGraphHtml } from './export/exportGraphHtml'
 import { applyUpdate, checkForUpdates, checkForUpdatesDetailed, isGitInstall } from './updates/UpdateChecker'
 import { ResumeManager } from './usage/ResumeManager'
 import { UsageTracker } from './usage/UsageTracker'
+import { EffortWatcher } from './usage/effortWatcher'
 import { CostAdvisor } from './usage/CostAdvisor'
 import { ContextStore } from './context/ContextStore'
 import { scanMemoryBanks } from './memoryScan'
@@ -76,6 +77,7 @@ function sendToTermHost(termId: string, channel: string, payload: unknown): void
 const agentDiscovery = new AgentDiscovery()
 let usageTracker: UsageTracker
 let costAdvisor: CostAdvisor
+const effortWatcher = new EffortWatcher()
 let graphStore: GraphStore | null = null
 let taskHub: TaskHub | null = null
 /** shared context notes, only when the active project has a shared folder */
@@ -448,6 +450,7 @@ function registerIpc(): void {
     resumeManager.enqueue(termId, text)
   })
   ipcMain.handle('resume:get', () => resumeManager.states())
+  ipcMain.handle('effort:get', () => effortWatcher.get())
   ipcMain.handle('resume:now', (_e, termId: string) => resumeManager.resumeNow(termId))
   ipcMain.handle('resume:cancel', (_e, termId: string) => resumeManager.cancel(termId))
 
@@ -602,6 +605,11 @@ app.whenReady().then(async () => {
     onChange: (termId, busy) => broadcast('term:activity', { termId, busy })
   })
 
+  // current "thinking" level (High / Extra High / Max) from ~/.claude/settings.json,
+  // shown as a tab badge next to the model. Global to the CLI, so one broadcast fits all tabs.
+  effortWatcher.on('change', (state) => broadcast('effort:changed', state))
+  effortWatcher.start()
+
   resumeManager = new ResumeManager({
     inject: (termId, text) => ptyManager.injectPrompt(termId, text, true),
     relaunchResume: (termId) => ptyManager.relaunchResume(termId),
@@ -641,4 +649,5 @@ app.on('before-quit', () => {
   mcpServer?.stop()
   agentDiscovery.dispose()
   usageTracker?.dispose()
+  effortWatcher.dispose()
 })

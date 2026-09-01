@@ -58,7 +58,7 @@ function tabStyle(color: string | undefined, active: boolean): React.CSSProperti
 }
 
 export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): React.JSX.Element {
-  const { panes, activePaneId, usage, billingReal, setActive, removePane, releasePane, renamePane, recolorPane } =
+  const { panes, activePaneId, usage, billingReal, effort, setActive, removePane, releasePane, renamePane, recolorPane } =
     useTerminalStore()
   // events the app recorded for each terminal (graph + goals/tasks), for the
   // "what did this terminal work on" tab tooltip
@@ -165,6 +165,14 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
                   title={`Model: ${liveModel ?? pane.model}${liveModel ? '' : ' (requested at launch)'}`}
                 >
                   {model}
+                </span>
+              )}
+              {effort?.label && (
+                <span
+                  className="tab-effort"
+                  title={`Thinking level: ${effort.label} (global — set with Shift+Tab in Claude)`}
+                >
+                  {effort.label}
                 </span>
               )}
               {pane.termId && usage[pane.termId] && (
