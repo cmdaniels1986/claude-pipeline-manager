@@ -5,7 +5,7 @@ import { useTaskStore } from '../stores/taskStore'
 import { useTerminalStore, type PaneRec } from '../stores/terminalStore'
 import { collectActivity, describeTerminal } from './terminalActivity'
 import { TerminalPane } from './TerminalPane'
-import { usageBadge } from './usageFormat'
+import { modelLabel, usageBadge } from './usageFormat'
 
 const STATUS_DOT: Record<PaneRec['status'], string> = {
   starting: '#e3b341',
@@ -126,6 +126,10 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
         {panes.map((pane) => {
           const active = pane.paneId === activePaneId
           const workedOn = describeTerminal(pane, collectActivity(pane.termId, graphEvents, taskEvents))
+          // the model actually running (from live telemetry) wins over the one
+          // requested at launch; the latter shows until the first metrics arrive
+          const liveModel = pane.termId ? usage[pane.termId]?.model : undefined
+          const model = modelLabel(liveModel ?? pane.model)
           return (
             <div
               key={pane.paneId}
@@ -155,6 +159,14 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
               <span className="tab-label" title={workedOn}>
                 {pane.label}
               </span>
+              {model && (
+                <span
+                  className="tab-model"
+                  title={`Model: ${liveModel ?? pane.model}${liveModel ? '' : ' (requested at launch)'}`}
+                >
+                  {model}
+                </span>
+              )}
               {pane.termId && usage[pane.termId] && (
                 <span className="tab-tokens" title="Session cost so far (≈ = notional; subscription is flat-rate)">
                   {usageBadge(usage[pane.termId], billingReal)}

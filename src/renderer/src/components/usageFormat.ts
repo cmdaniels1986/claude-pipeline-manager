@@ -17,6 +17,38 @@ export function totalTokens(u: TermUsage): number {
   return u.inputTokens + u.cacheCreationTokens + u.cacheReadTokens + u.outputTokens
 }
 
+/**
+ * Short, tab-sized model name, e.g. "Opus 4.8", "Sonnet 4.6", "Haiku 4.5",
+ * "Fable 5". Accepts full model ids (claude-opus-4-8[1m]), Claude Code's short
+ * aliases (opus/sonnet/haiku) or plan aliases (opusplan). Returns null when the
+ * model is unknown or the default (nothing worth badging).
+ */
+export function modelLabel(raw: string | undefined): string | null {
+  if (!raw) return null
+  const m = raw.toLowerCase().trim()
+  if (!m || m === 'default') return null
+  const family = m.includes('opus')
+    ? 'Opus'
+    : m.includes('sonnet')
+      ? 'Sonnet'
+      : m.includes('haiku')
+        ? 'Haiku'
+        : m.includes('fable')
+          ? 'Fable'
+          : m.includes('mythos')
+            ? 'Mythos'
+            : null
+  if (!family) {
+    // unrecognized id — show a trimmed form rather than nothing
+    return raw.replace(/^claude-/, '').replace(/\[[^\]]*\]$/, '').trim() || null
+  }
+  // "4-8"/"4.8"/"3-5" → "4.8"/"3.5"; else a solo version like fable-5 → "5"
+  const ver = /(\d+)[-.](\d+)/.exec(m)
+  if (ver) return `${family} ${ver[1]}.${ver[2]}`
+  const solo = /(?:opus|sonnet|haiku|fable|mythos)-?(\d+)(?![-.\d])/.exec(m)
+  return solo ? `${family} ${solo[1]}` : family
+}
+
 /** Compact tab badge: cost when known (the truest "how much has this burned"),
  *  else a token total. Prefixed ≈ when the cost is notional (subscription). */
 export function usageBadge(u: TermUsage, billingReal: boolean): string {
