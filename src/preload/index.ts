@@ -3,13 +3,13 @@ import type {
   AdvisorChangedPayload,
   AgentInfo,
   ChangedNodesResult,
+  ClaudeSettingsState,
   ContextChangedPayload,
   CostSuggestionAction,
   CostSuggestionKind,
   CreateTermOptions,
   Diagnostics,
   DismissMode,
-  EffortState,
   FleetAdvisorPayload,
   GoalStatus,
   GraphChangedPayload,
@@ -128,9 +128,9 @@ const api = {
   resumeCancel: (termId: string): Promise<void> => ipcRenderer.invoke('resume:cancel', termId),
   onResumeChanged: subscribe<ResumeState>('resume:changed'),
 
-  // current thinking / reasoning-effort level (global, from ~/.claude/settings.json)
-  effortGet: (): Promise<EffortState> => ipcRenderer.invoke('effort:get'),
-  onEffortChanged: subscribe<EffortState>('effort:changed'),
+  // global default model + thinking level (from ~/.claude/settings.json)
+  settingsGet: (): Promise<ClaudeSettingsState> => ipcRenderer.invoke('settings:get'),
+  onSettingsChanged: subscribe<ClaudeSettingsState>('settings:changed'),
 
   // cost advisor (session-monitoring suggestions)
   advisorDismiss: (termId: string, kind: CostSuggestionKind, mode?: DismissMode): Promise<void> =>

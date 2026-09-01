@@ -335,6 +335,28 @@ export interface TermUsage {
   bySource?: SourceUsage[]
 }
 
+/** Current Claude Code "thinking" / reasoning-effort level, read from the user's
+ *  global ~/.claude/settings.json. This is a global setting the CLI rewrites when
+ *  you cycle thinking (Shift+Tab), so it's shared across all running sessions. */
+export interface EffortState {
+  /** raw as persisted: 'low' | 'medium' | 'high' | 'xhigh', or 'max' when ultracode
+   *  is on; null when unset (default) */
+  level: string | null
+  /** tab-sized display label: 'Low' | 'Medium' | 'High' | 'Extra High' | 'Max',
+   *  or null when there's nothing worth showing */
+  label: string | null
+}
+
+/** Live snapshot of the global ~/.claude/settings.json bits we badge on tabs.
+ *  The CLI persists both the default model and the effort level here and rewrites
+ *  the file when you change either in a session (/model, Shift+Tab), so watching
+ *  it gives an instant signal without waiting on telemetry. */
+export interface ClaudeSettingsState {
+  /** global default model (raw id/alias, e.g. 'opus[1m]'), or null when unset */
+  model: string | null
+  effort: EffortState
+}
+
 // ---- cost advisor (session-monitoring suggestions) ------------------------
 /** which cost pattern a suggestion is about */
 export type CostSuggestionKind =

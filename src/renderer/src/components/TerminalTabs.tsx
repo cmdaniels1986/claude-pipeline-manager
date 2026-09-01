@@ -58,8 +58,10 @@ function tabStyle(color: string | undefined, active: boolean): React.CSSProperti
 }
 
 export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): React.JSX.Element {
-  const { panes, activePaneId, usage, billingReal, effort, setActive, removePane, releasePane, renamePane, recolorPane } =
+  const { panes, activePaneId, usage, billingReal, claudeSettings, setActive, removePane, releasePane, renamePane, recolorPane } =
     useTerminalStore()
+  const effort = claudeSettings?.effort
+  const globalModel = claudeSettings?.model ?? undefined
   // events the app recorded for each terminal (graph + goals/tasks), for the
   // "what did this terminal work on" tab tooltip
   const graphEvents = useGraphStore((s) => s.graph?.events)
@@ -126,10 +128,12 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
         {panes.map((pane) => {
           const active = pane.paneId === activePaneId
           const workedOn = describeTerminal(pane, collectActivity(pane.termId, graphEvents, taskEvents))
-          // the model actually running (from live telemetry) wins over the one
-          // requested at launch; the latter shows until the first metrics arrive
+          // the model actually running (from live telemetry) wins; before the first
+          // metrics arrive we fall back to this session's launch model, then to the
+          // global default from settings.json (so a fresh tab isn't blank)
           const liveModel = pane.termId ? usage[pane.termId]?.model : undefined
-          const model = modelLabel(liveModel ?? pane.model)
+          const shownModel = liveModel ?? pane.model ?? globalModel
+          const model = modelLabel(shownModel)
           return (
             <div
               key={pane.paneId}
@@ -162,7 +166,7 @@ export function TerminalTabs({ onNewTerminal }: { onNewTerminal: () => void }): 
               {model && (
                 <span
                   className="tab-model"
-                  title={`Model: ${liveModel ?? pane.model}${liveModel ? '' : ' (requested at launch)'}`}
+                  title={`Model: ${shownModel}${liveModel ? '' : ' (from settings — live once this session sends a turn)'}`}
                 >
                   {model}
                 </span>

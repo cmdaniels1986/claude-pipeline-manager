@@ -799,7 +799,7 @@ button.toggled {
   border-radius: 5px 5px 0 0;
   cursor: pointer;
   user-select: none;
-  max-width: 240px;
+  max-width: 320px;
   white-space: nowrap;
   color: var(--text-dim);
 }
@@ -839,6 +839,15 @@ button.toggled {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
+  /* the label yields space to the badges so the model + thinking never clip */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* badges keep their full text; only the label shrinks */
+.tab-model,
+.tab-effort,
+.tab-tokens {
+  flex: 0 0 auto;
 }
 .tab-tokens {
   font-size: 10px;
