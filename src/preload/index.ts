@@ -15,6 +15,8 @@ import type {
   GraphChangedPayload,
   GraphState,
   MemoryScan,
+  PreviewReload,
+  PreviewState,
   ProjectInfo,
   ProjectsState,
   ResumeState,
@@ -155,7 +157,21 @@ const api = {
   // updates
   updatesCheck: (): Promise<UpdateCheckResult> => ipcRenderer.invoke('updates:check'),
   updatesApply: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('updates:apply'),
-  onUpdatesAvailable: subscribe<UpdateStatus>('updates:available')
+  onUpdatesAvailable: subscribe<UpdateStatus>('updates:available'),
+
+  // live web preview (the <webview> pane beside the terminals)
+  previewGet: (): Promise<PreviewState> => ipcRenderer.invoke('preview:get'),
+  previewSet: (url: string, label?: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('preview:set', { url, label }),
+  previewClear: (): Promise<void> => ipcRenderer.invoke('preview:clear'),
+  openPreviewWindow: (): Promise<void> => ipcRenderer.invoke('preview:openWindow'),
+  previewScreenshot: (p: {
+    webContentsId: number
+    termId: string
+  }): Promise<{ ok: true; path: string; fileName: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('preview:screenshot', p),
+  onPreviewChanged: subscribe<PreviewState>('preview:changed'),
+  onPreviewReload: subscribe<PreviewReload>('preview:reload')
 }
 
 export type Api = typeof api

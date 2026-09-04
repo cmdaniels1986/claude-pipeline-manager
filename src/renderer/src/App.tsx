@@ -4,10 +4,12 @@ import { FleetAdvisorBar } from './components/FleetAdvisorBar'
 import { GraphDock } from './components/GraphDock'
 import { MemoryCheck } from './components/MemoryCheck'
 import { NewTerminalDialog } from './components/NewTerminalDialog'
+import { PreviewDock } from './components/PreviewDock'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { TaskDock } from './components/TaskDock'
 import { TerminalTabs } from './components/TerminalTabs'
 import { sessionBadge, sessionTotals } from './components/usageFormat'
+import { usePreviewStore } from './stores/previewStore'
 import { useTerminalStore } from './stores/terminalStore'
 
 const MIN_GRAPH_WIDTH = 340
@@ -19,7 +21,8 @@ export default function App(): React.JSX.Element {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [diag, setDiag] = useState<Diagnostics | null>(null)
   const [showWarnings, setShowWarnings] = useState(false)
-  const [rightView, setRightView] = useState<'graph' | 'tasks' | null>('graph')
+  const [rightView, setRightView] = useState<'graph' | 'tasks' | 'preview' | null>('graph')
+  const previewUrl = usePreviewStore((s) => s.state?.url ?? null)
   const [graphWidth, setGraphWidth] = useState(Math.round(window.innerWidth * 0.42))
   const [dragging, setDragging] = useState(false)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
@@ -137,6 +140,19 @@ export default function App(): React.JSX.Element {
           title={rightView === 'tasks' ? 'Hide the tasks panel' : 'Show goals & tasks'}
         >
           ✓ Goals &amp; Tasks
+        </button>
+        <button
+          className={rightView === 'preview' ? 'toggled' : ''}
+          onClick={() => setRightView((v) => (v === 'preview' ? null : 'preview'))}
+          title={
+            rightView === 'preview'
+              ? 'Hide the live preview'
+              : previewUrl
+                ? `Show the live preview (${previewUrl})`
+                : 'Show the live web preview — a browser for whatever dev server your terminals run'
+          }
+        >
+          🖥 Live Preview{previewUrl && rightView !== 'preview' ? <span className="preview-dot" /> : null}
         </button>
         <button
           onClick={() => void runLoginCheck()}
@@ -265,6 +281,8 @@ export default function App(): React.JSX.Element {
             <div className="split-right" style={{ width: graphWidth }}>
               {rightView === 'graph' ? (
                 <GraphDock onClose={() => setRightView(null)} />
+              ) : rightView === 'preview' ? (
+                <PreviewDock onClose={() => setRightView(null)} />
               ) : (
                 <TaskDock onClose={() => setRightView(null)} />
               )}

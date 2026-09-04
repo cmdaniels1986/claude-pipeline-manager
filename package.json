@@ -11,6 +11,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test:limits": "esbuild src/main/usage/limitDetect.ts --format=esm --outfile=out/.limitdetect-under-test.mjs --log-level=warning && node scripts/verify-limit-detect.mjs",
+    "test:preview": "esbuild src/main/preview/urlDetect.ts --bundle --platform=node --format=esm --outfile=out/.urldetect-under-test.mjs --log-level=warning && node scripts/test-url-detect.mjs",
+    "test:preview-manager": "esbuild src/main/preview/PreviewManager.ts --bundle --platform=node --format=esm --external:chokidar --outfile=out/.previewmanager-under-test.mjs --log-level=warning && node scripts/test-preview-manager.mjs",
     "pack:dir": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder --win"
   },

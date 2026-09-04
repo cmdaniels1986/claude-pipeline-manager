@@ -15,8 +15,10 @@ if (!expression) {
 const matchIdx = process.argv.indexOf('--match')
 const matchStr = matchIdx !== -1 ? process.argv[matchIdx + 1] : null
 
-const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json()
-const pages = targets.filter((t) => t.type === 'page' && t.url.includes('localhost:5173'))
+const cdpPort = process.env.CPM_CDP_PORT || '9222'
+const targets = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
+// vite picks the next port when 5173 is busy — match any local renderer page
+const pages = targets.filter((t) => t.type === 'page' && /^http:\/\/localhost:\d+\//.test(t.url))
 const target = matchStr
   ? pages.find((t) => t.url.includes(matchStr))
   : pages.find((t) =>

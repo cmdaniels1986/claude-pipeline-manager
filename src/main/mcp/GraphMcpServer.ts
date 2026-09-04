@@ -6,6 +6,7 @@ import type { GraphStore } from '../graph/GraphStore'
 import { edgeInputSchema, edgeKindSchema, nodeInputSchema, nodeStatusSchema, nodeTypeSchema } from '../graph/schema'
 import type { TaskHub } from '../tasks/TaskHub'
 import { taskInputSchema, taskStatusSchema } from '../tasks/schema'
+import type { PreviewManager } from '../preview/PreviewManager'
 
 /**
  * One shared HTTP MCP server for all Claude terminals (stateless streamable-http:
@@ -19,7 +20,8 @@ export class GraphMcpServer {
 
   constructor(
     private getStore: () => GraphStore | null,
-    private getTaskStore: () => TaskHub | null
+    private getTaskStore: () => TaskHub | null,
+    private getPreview: () => PreviewManager | null = () => null
   ) {}
 
   async start(): Promise<number> {
@@ -269,6 +271,39 @@ export class GraphMcpServer {
         const store = this.getTaskStore()
         if (!store) return noTasks()
         return text(store.remove(ids, termId))
+      }
+    )
+
+    // ---- live web preview ---------------------------------------------------
+    server.registerTool(
+      'preview_set',
+      {
+        description:
+          'Point the live preview pane (a browser the human sees beside the terminals) at a local dev-server URL. Call it whenever you start or restart a web server (Vite, Flask, Django, Next, static…). Only loopback URLs (localhost / 127.0.0.1).',
+        inputSchema: {
+          url: z.string().min(1).describe('e.g. http://localhost:5173 or http://127.0.0.1:5000/admin'),
+          label: z.string().optional().describe('short name shown on the pane, e.g. "storefront" or "Flask API"')
+        }
+      },
+      async ({ url, label }) => {
+        const pv = this.getPreview()
+        if (!pv) return text({ error: 'No active project.' })
+        const set = pv.set(url, 'agent', termId, label)
+        return text(set ? { ok: true, url: set } : { error: 'Not a local http(s) URL — only localhost / 127.0.0.1 can be previewed.' })
+      }
+    )
+
+    server.registerTool(
+      'preview_reload',
+      {
+        description:
+          'Reload the live preview pane. Use after changing files a server without hot reload serves (Flask/Django templates, static HTML). The pane also auto-reloads on file changes, so this is only needed when that missed something.'
+      },
+      async () => {
+        const pv = this.getPreview()
+        if (!pv) return text({ error: 'No active project.' })
+        pv.reload(termId)
+        return text({ ok: true })
       }
     )
 

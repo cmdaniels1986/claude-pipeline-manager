@@ -5,8 +5,17 @@ import './styles.css'
 import App from './App'
 import TermWindowApp from './components/TermWindowApp'
 import GraphApp from './graph/GraphApp'
+import PreviewApp from './preview/PreviewApp'
 
 const hash = window.location.hash
-const page = hash.startsWith('#/graph') ? <GraphApp /> : hash.startsWith('#/term/') ? <TermWindowApp /> : <App />
+const page = hash.startsWith('#/graph') ? (
+  <GraphApp />
+) : hash.startsWith('#/preview') ? (
+  <PreviewApp />
+) : hash.startsWith('#/term/') ? (
+  <TermWindowApp />
+) : (
+  <App />
+)
 
 createRoot(document.getElementById('root')!).render(page)

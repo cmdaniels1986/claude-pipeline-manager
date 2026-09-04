@@ -439,3 +439,37 @@ export interface FleetSuggestion {
 export interface FleetAdvisorPayload {
   suggestion: FleetSuggestion | null
 }
+
+// ---- live web preview ------------------------------------------------------
+/** how the currently shown preview URL was chosen */
+export type PreviewSource = 'agent' | 'detected' | 'manual'
+
+/** a dev-server URL seen in a terminal's output or announced by an agent */
+export interface PreviewCandidate {
+  url: string
+  /** terminal that printed/announced it; null when typed by the human */
+  termId: string | null
+  label?: string
+  /** ISO time it was last seen */
+  ts: string
+}
+
+/** the active project's live-preview state, mirrored to every window */
+export interface PreviewState {
+  /** the URL the preview pane shows, or null when nothing has been picked yet */
+  url: string | null
+  label: string | null
+  source: PreviewSource | null
+  /** ISO time the current url was selected */
+  selectedAt: string | null
+  /** recently seen dev-server URLs, newest first */
+  candidates: PreviewCandidate[]
+}
+
+/** why the preview should reload */
+export interface PreviewReload {
+  reason: 'agent' | 'files'
+  /** the changed file, for the 'files' reason */
+  path?: string
+  termId?: string | null
+}

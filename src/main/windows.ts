@@ -3,6 +3,7 @@ import { join } from 'path'
 
 let mainWindow: BrowserWindow | null = null
 let graphWindow: BrowserWindow | null = null
+let previewWindow: BrowserWindow | null = null
 const termWindows = new Map<string, BrowserWindow>()
 
 function baseOptions(): Electron.BrowserWindowConstructorOptions {
@@ -13,9 +14,26 @@ function baseOptions(): Electron.BrowserWindowConstructorOptions {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      // the live web preview pane is a <webview> (guest page in its own process)
+      webviewTag: true
     }
   }
+}
+
+/** Pop the live web preview out into its own window (hash route /preview). */
+export function openPreviewWindow(): BrowserWindow {
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    previewWindow.focus()
+    return previewWindow
+  }
+  previewWindow = new BrowserWindow({ ...baseOptions(), width: 1100, height: 800, title: 'Live Preview' })
+  previewWindow.on('ready-to-show', () => previewWindow?.show())
+  previewWindow.on('closed', () => {
+    previewWindow = null
+  })
+  loadRenderer(previewWindow, '/preview')
+  return previewWindow
 }
 
 function loadRenderer(win: BrowserWindow, hash: string): void {

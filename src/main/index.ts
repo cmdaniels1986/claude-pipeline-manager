@@ -1,8 +1,9 @@
-import { app, dialog, ipcMain, shell } from 'electron'
+import { app, dialog, ipcMain, shell, webContents } from 'electron'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { homedir, userInfo } from 'os'
 import { isAbsolute, join } from 'path'
 import type { CostSuggestionAction, CostSuggestionKind, CreateTermOptions, Diagnostics, DismissMode, GoalStatus, ProjectInfo, TaskScope, TaskStatus } from '../shared/types'
+import { PreviewManager } from './preview/PreviewManager'
 import { AgentDiscovery } from './agents/AgentDiscovery'
 import { GraphStore } from './graph/GraphStore'
 import { computeChangedNodes } from './graph/gitScope'
@@ -30,12 +31,14 @@ import {
   getMainWindow,
   isTerminalPoppedOut,
   openGraphWindow,
+  openPreviewWindow,
   openTerminalWindow
 } from './windows'
 
 if (!app.isPackaged) {
   // dev-only: allows driving the renderer over CDP for automated verification
-  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+  // (CPM_CDP_PORT lets a second dev instance run beside an already-open app)
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.CPM_CDP_PORT || '9222')
 }
 
 // A failed ConPTY spawn (e.g. bad cwd) surfaces as an async uncaught exception from
@@ -56,6 +59,12 @@ A human sees a live goals/tasks board (shared with you via the "graph" MCP serve
 - When you take on a multi-step piece of work, capture it: tasks_add_goal (an objective, optionally with an initial task list) and tasks_add_tasks (more tasks under a goal).
 - tasks_set_status as you go: doing when you start a task, done when it's finished. This is the main signal the human watches — keep it honest. Passing a goal id (with done) marks the whole goal complete once its objective is met.
 - tasks_get to see the current board; tasks_remove only when an item is genuinely no longer relevant. The human also edits this board, so don't wipe their entries.
+
+# Live Preview
+The human has a live browser pane beside the terminals for web work (any stack: Vite/React, Next, Flask, Django, static HTML…).
+- Whenever you start or restart a local web server, call preview_set with its URL (e.g. http://localhost:5173) so the pane shows the page. The app also spots URLs you print, but the tool call is the reliable path.
+- The pane reloads itself on file changes (and hot-reload servers update on their own); call preview_reload only if the page looks stale after an edit.
+- The human can paste screenshots of the pane into your session and forward its browser console errors to you — treat those as bug reports about the page you're building.
 `
 
 let claudeInfo: ClaudeInfo
@@ -63,6 +72,7 @@ let ptyManager: PtyManager
 let resumeManager: ResumeManager
 let activityMonitor: ActivityMonitor | null = null
 let mcpServer: GraphMcpServer
+let previewManager: PreviewManager
 /** which renderer window currently hosts each terminal's UI */
 const termHosts = new Map<string, Electron.WebContents>()
 
@@ -145,6 +155,7 @@ function setActiveProject(info: ProjectInfo): void {
   taskHub = makeTaskHub(info)
   rebuildContextStore(info.sharedTasksPath ?? null)
   agentDiscovery.setProjectRoot(info.root)
+  previewManager?.setRoot(info.root)
   broadcast('graph:changed', { graph: graphStore.get(), event: null })
   broadcast('tasks:changed', { ...taskHub.snapshot(), event: null, scope: null })
 }
@@ -522,6 +533,38 @@ function registerIpc(): void {
     return { ok: true }
   })
 
+  // ---- live web preview ----------------------------------------------------
+  ipcMain.handle('preview:get', () => previewManager.get())
+  ipcMain.handle('preview:set', (_e, { url, label }: { url: string; label?: string }) => {
+    const set = previewManager.set(url, 'manual', null, label)
+    return set ? { ok: true as const, url: set } : { ok: false as const, error: 'Only local http(s) URLs (localhost / 127.0.0.1) can be previewed.' }
+  })
+  ipcMain.handle('preview:clear', () => previewManager.clear())
+  ipcMain.handle('preview:openWindow', () => {
+    openPreviewWindow()
+  })
+  // Capture the preview page and hand it to a Claude session the same way a pasted
+  // screenshot goes in: spill a PNG to ~/.claude/pasted-images and type its path
+  // into the terminal (no Enter — the user adds what to fix and submits).
+  ipcMain.handle(
+    'preview:screenshot',
+    async (_e, { webContentsId, termId }: { webContentsId: number; termId: string }) => {
+      if (!ptyManager.isAlive(termId)) return { ok: false as const, error: 'Terminal is not running' }
+      const guest = webContents.fromId(webContentsId)
+      if (!guest || guest.isDestroyed()) return { ok: false as const, error: 'Preview page is not loaded' }
+      try {
+        const image = await guest.capturePage()
+        if (image.isEmpty()) return { ok: false as const, error: 'Nothing to capture yet — is the page visible?' }
+        const { path, fileName } = savePastedImage(new Uint8Array(image.toPNG()), 'image/png')
+        const token = /\s/.test(path) ? `"${path}"` : path
+        ptyManager.write(termId, `${token} `)
+        return { ok: true as const, path, fileName }
+      } catch (err) {
+        return { ok: false as const, error: String(err) }
+      }
+    }
+  )
+
   ipcMain.handle('app:checkLogin', () => checkLogin(claudeInfo.exePath))
 
   ipcMain.handle('updates:check', () => checkForUpdatesDetailed(app.getAppPath()))
@@ -560,9 +603,19 @@ app.whenReady().then(async () => {
   collectWarnings()
   const { protocolPath, settingsFallbackPath } = writeSupportFiles()
 
+  // live web preview: what the pane shows + when it should reload (state is
+  // per-project; the <webview> itself lives in the renderer)
+  previewManager = new PreviewManager({
+    onChange: (state) => broadcast('preview:changed', state),
+    onReload: (reload) => broadcast('preview:reload', reload),
+    // never offer the app's own local ports (MCP, telemetry receiver, devtools)
+    excludePorts: () => [mcpServer?.port ?? 0, usageTracker?.port ?? 0, 9222].filter((p) => p > 0)
+  })
+
   mcpServer = new GraphMcpServer(
     () => graphStore,
-    () => taskHub
+    () => taskHub,
+    () => previewManager
   )
   await mcpServer.start()
 
@@ -591,6 +644,7 @@ app.whenReady().then(async () => {
       sendToTermHost(termId, 'term:data', { termId, data })
       resumeManager?.observe(termId, data)
       activityMonitor?.observe(termId, data)
+      previewManager?.observe(termId, data)
     },
     onExit: (termId, exitCode) => {
       sendToTermHost(termId, 'term:exit', { termId, exitCode })
@@ -636,6 +690,23 @@ app.whenReady().then(async () => {
   startUpdateChecks()
 })
 
+// Harden the preview <webview>: the guest page is whatever dev server the user is
+// building — keep it a plain browser page (no preload, no node), and send any
+// window.open / target=_blank to the system browser instead of a new guest.
+app.on('web-contents-created', (_e, contents) => {
+  contents.on('will-attach-webview', (_ev, webPreferences) => {
+    delete webPreferences.preload
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+  })
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/i.test(url)) void shell.openExternal(url)
+      return { action: 'deny' }
+    })
+  }
+})
+
 app.on('window-all-closed', () => {
   app.quit()
 })
@@ -647,6 +718,7 @@ app.on('before-quit', () => {
   graphStore?.dispose()
   taskHub?.dispose()
   contextStore?.dispose()
+  previewManager?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
   usageTracker?.dispose()

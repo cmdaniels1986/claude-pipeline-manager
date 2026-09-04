@@ -31,6 +31,16 @@ Double-click `Start Pipeline Manager.bat`, or:
 npm run dev
 ```
 
+## Live Preview (web work)
+
+The **🖥 Live Preview** header button opens an embedded browser beside the terminals for whatever web app Claude is building — any stack (Vite/React, Next, Flask, Django, static HTML…), since every one of them ends up as a URL on localhost.
+
+- **Finding the page**: agents call the `preview_set` MCP tool when they start a dev server (the injected protocol tells them to), the app also spots any `http://localhost:…` / `127.0.0.1:…` URL printed in a terminal (Vite, Flask, Django, Next, Rails banners…), and you can type a port or URL into the bar. The first server seen is shown automatically; later ones are offered as "new server" chips and listed under **servers ▾**. The URL is remembered per project.
+- **Reloading**: pages with a hot-reload client (Vite, Next, webpack, Parcel, live-reload) update themselves and the pane shows an ⚡ badge. For everything else the pane reloads when files in the project change (toggle **⟳ auto**), and agents can call `preview_reload`.
+- **Closing the loop with Claude**: **📸** pastes a screenshot of the page into a Claude session (pick the session in the dropdown when more than one is running), then you describe what to change and press Enter. Browser console errors/warnings collect in a badge; **Send to Claude** forwards them as a bug report.
+- Viewport presets (phone / tablet / desktop) scale to fit the panel; **⧉** pops the preview into its own window.
+- If the server isn't up yet (or is restarting) the pane shows a "can't reach" overlay and retries every few seconds.
+
 ## Notes
 
 - Terminal sessions are real Claude Code — permission prompts, slash commands, MCP servers, and your settings all behave exactly as in a normal terminal.
