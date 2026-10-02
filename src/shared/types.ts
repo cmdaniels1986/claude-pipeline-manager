@@ -266,6 +266,66 @@ export interface MemoryScan {
   injectedTokensApprox?: number
 }
 
+// ---- global + linked memory ------------------------------------------------
+/** Claude Code's memory kinds (the `metadata.type` in a memory file's frontmatter). */
+export const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference'] as const
+export type MemoryType = (typeof MEMORY_TYPES)[number]
+
+/** One memory in the Global Memory folder, parsed from its file's frontmatter. */
+export interface SharedMemoryEntry {
+  /** kebab-case slug — also the file name without .md */
+  name: string
+  /** file name inside the Global Memory folder */
+  file: string
+  title: string
+  /** one-line summary (the hook after the title in MEMORY.md) */
+  description: string
+  type?: string
+  /** who last saved it (machine username) */
+  author?: string
+  /** ISO date it was last saved */
+  updated?: string
+}
+
+/** A memory location the user browsed to and linked; loaded into every terminal, read-only. */
+export interface LinkedMemorySource {
+  id: string
+  /** absolute path to a memory folder, a MEMORY.md index, or a single memory file */
+  path: string
+  addedAt: string
+}
+
+/** Persisted at <userData>/memory-sources.json — app-wide, not per project. */
+export interface MemorySettings {
+  version: 1
+  /** where "save this to global memory" writes; null until the user picks one */
+  globalDir: string | null
+  linked: LinkedMemorySource[]
+}
+
+export interface LinkedMemoryInfo extends LinkedMemorySource {
+  /** folder = a memory store folder; index = its MEMORY.md; file = one memory file */
+  kind: 'folder' | 'index' | 'file'
+  exists: boolean
+  entries: number
+  sampleTitles: string[]
+  /** set when the same memory is already loaded another way, so it isn't injected twice */
+  duplicateOf?: 'machine' | 'global'
+}
+
+export interface SharedMemoryState {
+  global: { dir: string; exists: boolean; entries: SharedMemoryEntry[] } | null
+  linked: LinkedMemoryInfo[]
+}
+
+/** Outcome of copying memory files into Global Memory from the file picker. */
+export interface MemoryImportResult {
+  canceled?: boolean
+  added: string[]
+  updated: string[]
+  skipped: { file: string; reason: string }[]
+}
+
 export interface Diagnostics {
   claudeExePath: string
   claudeVersion: string

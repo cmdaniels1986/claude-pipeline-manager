@@ -41,8 +41,19 @@ The **🖥 Live Preview** header button opens an embedded browser beside the ter
 - Viewport presets (phone / tablet / desktop) scale to fit the panel; **⧉** pops the preview into its own window.
 - If the server isn't up yet (or is restarting) the pane shows a "can't reach" overlay and retries every few seconds.
 
+## Memory, Global Memory and linked memory
+
+Every terminal starts with your saved Claude memory: the app injects **every** Claude Code memory store on the machine (a normal `claude` session only sees the one nearest its folder). The **🧠 Memory** header button shows what was found and roughly how many tokens it adds.
+
+Two more kinds of memory are managed in the same panel. Both are app-wide (every project, every terminal):
+
+- **🌐 Global Memory**: a folder you choose (**Choose location…**) that terminals save to when you tell one *"save this to global memory"*. They call the `global_memory_save` MCP tool, which writes a normal Claude memory file (frontmatter + body, stamped with who saved it) and keeps the folder's `MEMORY.md` index up to date. Pick a shared or synced folder (Google Drive, OneDrive, Dropbox…) so other people can load it too. Anyone who chooses the same folder as their own Global Memory loads it **and** can add to it. **＋ Add memory files…** copies memory files you pick (for example from your own memory under `~/.claude/projects/…/memory`) into it. Other tools: `global_memory_list`, `global_memory_remove`. Ordinary "remember this" requests still go to Claude's personal memory.
+- **🔗 Linked memory**: someone else's memory you browse to (**Link file…** / **Link folder…**): a `MEMORY.md` (links its whole folder), a memory folder, or one memory file. It's loaded into every new terminal, read-only. A linked folder that's already loaded another way (your Global Memory, or a store on this machine) isn't injected twice. An unreachable path (drive unplugged, sync app off) is flagged and skipped.
+
+The locations are saved in `<app data>/memory-sources.json`. New terminals pick up changes immediately; an already-running session can call `global_memory_list` to see entries added since it started.
+
 ## Notes
 
 - Terminal sessions are real Claude Code — permission prompts, slash commands, MCP servers, and your settings all behave exactly as in a normal terminal.
 - The first time a session uses each graph tool you'll get a normal permission prompt; choose "don't ask again in this project" once.
-- `scripts/` contains a dev-only harness (CDP driver + headless screen renderer) used for automated verification; it requires the app to be running in dev mode (`--remote-debugging-port=9222`).
+- `scripts/` contains a dev-only harness (CDP driver + headless screen renderer) used for automated verification; it requires the app to be running in dev mode (`--remote-debugging-port=9222`). To check changes without touching the app you're using, start a second dev instance with `CPM_CDP_PORT` (its own debug port) and `CPM_USER_DATA` (its own app-data folder; its window opens without stealing focus).

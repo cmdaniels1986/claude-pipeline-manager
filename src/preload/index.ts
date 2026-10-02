@@ -14,12 +14,14 @@ import type {
   GoalStatus,
   GraphChangedPayload,
   GraphState,
+  MemoryImportResult,
   MemoryScan,
   PreviewReload,
   PreviewState,
   ProjectInfo,
   ProjectsState,
   ResumeState,
+  SharedMemoryState,
   TaskScope,
   TaskStatus,
   TasksChangedPayload,
@@ -153,6 +155,22 @@ const api = {
   getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('app:diagnostics'),
   checkLogin: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('app:checkLogin'),
   scanMemory: (): Promise<MemoryScan> => ipcRenderer.invoke('memory:scan'),
+
+  // Global Memory (shared folder "save to global memory" writes into) + linked memory
+  memoryShared: (): Promise<SharedMemoryState> => ipcRenderer.invoke('memory:shared'),
+  memoryChooseGlobal: (): Promise<
+    { canceled: true } | { canceled: false; state: SharedMemoryState; error?: string }
+  > => ipcRenderer.invoke('memory:chooseGlobal'),
+  memoryClearGlobal: (): Promise<SharedMemoryState> => ipcRenderer.invoke('memory:clearGlobal'),
+  memoryImportToGlobal: (): Promise<MemoryImportResult & { error?: string }> =>
+    ipcRenderer.invoke('memory:importToGlobal'),
+  memoryLink: (kind: 'file' | 'folder'): Promise<{ canceled: true } | { canceled: false; state: SharedMemoryState }> =>
+    ipcRenderer.invoke('memory:link', kind),
+  memoryUnlink: (id: string): Promise<SharedMemoryState> => ipcRenderer.invoke('memory:unlink', id),
+  memoryRemoveGlobal: (name: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('memory:removeGlobal', name),
+  memoryReveal: (path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('memory:reveal', path),
+  onMemoryChanged: subscribe<SharedMemoryState>('memory:changed'),
 
   // updates
   updatesCheck: (): Promise<UpdateCheckResult> => ipcRenderer.invoke('updates:check'),

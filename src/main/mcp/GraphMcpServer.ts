@@ -7,6 +7,8 @@ import { edgeInputSchema, edgeKindSchema, nodeInputSchema, nodeStatusSchema, nod
 import type { TaskHub } from '../tasks/TaskHub'
 import { taskInputSchema, taskStatusSchema } from '../tasks/schema'
 import type { PreviewManager } from '../preview/PreviewManager'
+import type { MemorySources } from '../sharedMemory'
+import { MEMORY_TYPES } from '../../shared/types'
 
 /**
  * One shared HTTP MCP server for all Claude terminals (stateless streamable-http:
@@ -21,7 +23,8 @@ export class GraphMcpServer {
   constructor(
     private getStore: () => GraphStore | null,
     private getTaskStore: () => TaskHub | null,
-    private getPreview: () => PreviewManager | null = () => null
+    private getPreview: () => PreviewManager | null = () => null,
+    private getMemory: () => MemorySources | null = () => null
   ) {}
 
   async start(): Promise<number> {
@@ -304,6 +307,71 @@ export class GraphMcpServer {
         if (!pv) return text({ error: 'No active project.' })
         pv.reload(termId)
         return text({ ok: true })
+      }
+    )
+
+    // ---- global (shared) memory ----------------------------------------------
+    const noMemory = () => text({ error: 'Memory sources are not available yet.' })
+
+    server.registerTool(
+      'global_memory_save',
+      {
+        description:
+          "Save a memory to the user's GLOBAL memory — a shared folder other people working on these projects also load. Use only when the user asks to save something to global/shared memory; ordinary memories stay in your personal memory. Reusing an existing name updates that entry.",
+        inputSchema: {
+          name: z.string().min(1).describe('short kebab-case slug, e.g. ue-shader-cache-trap; reuse an existing name to update it'),
+          title: z.string().min(1).describe('human-readable title for the index line'),
+          description: z.string().min(1).describe('one-line summary used to judge relevance later'),
+          type: z.enum(MEMORY_TYPES).optional().describe('user | feedback | project | reference'),
+          body: z
+            .string()
+            .min(1)
+            .describe('the memory, written for someone without this conversation; for feedback/project add **Why:** and **How to apply:** lines')
+        }
+      },
+      async (input) => {
+        const mem = this.getMemory()
+        if (!mem) return noMemory()
+        return text(mem.save(input))
+      }
+    )
+
+    server.registerTool(
+      'global_memory_list',
+      {
+        description:
+          'List what is in Global Memory right now (others may have saved entries since this session started). Each entry is a file in the returned folder you can Read.'
+      },
+      async () => {
+        const mem = this.getMemory()
+        if (!mem) return noMemory()
+        const g = mem.state().global
+        if (!g) return text({ error: 'No Global Memory location is set — the user chooses one in the 🧠 Memory panel.' })
+        return text({
+          folder: g.dir,
+          reachable: g.exists,
+          entries: g.entries.map((e) => ({
+            name: e.name,
+            title: e.title,
+            description: e.description,
+            ...(e.type ? { type: e.type } : {}),
+            ...(e.author ? { author: e.author } : {}),
+            ...(e.updated ? { updated: e.updated.slice(0, 10) } : {})
+          }))
+        })
+      }
+    )
+
+    server.registerTool(
+      'global_memory_remove',
+      {
+        description: 'Delete a Global Memory entry by name — only when the user asks or it is proven wrong (it is removed for everyone).',
+        inputSchema: { name: z.string().min(1) }
+      },
+      async ({ name }) => {
+        const mem = this.getMemory()
+        if (!mem) return noMemory()
+        return text(mem.remove(name))
       }
     )
 

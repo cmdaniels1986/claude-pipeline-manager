@@ -47,7 +47,10 @@ function loadRenderer(win: BrowserWindow, hash: string): void {
 
 export function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({ ...baseOptions(), width: 1500, height: 950, title: 'Claude Pipeline Manager' })
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // an isolated dev test instance (CPM_USER_DATA) opens behind whatever you're doing
+  mainWindow.on('ready-to-show', () =>
+    !app.isPackaged && process.env.CPM_USER_DATA ? mainWindow?.showInactive() : mainWindow?.show()
+  )
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }

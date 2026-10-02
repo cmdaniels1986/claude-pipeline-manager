@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MemoryBank, MemoryScan } from '../../../shared/types'
+import type { MemoryBank, MemoryScan, SharedMemoryState } from '../../../shared/types'
+import { SharedMemoryPanel } from './SharedMemoryPanel'
 
 /**
  * Startup memory check. On open it asks the main process to scan every Claude
@@ -13,7 +14,23 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
   const [revealed, setRevealed] = useState(0)
   const [phase, setPhase] = useState<'searching' | 'done'>('searching')
   const [showDetails, setShowDetails] = useState(false)
+  const [shared, setShared] = useState<SharedMemoryState | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Global + linked memory: load once, then follow changes (a terminal saving to
+  // Global Memory, a teammate's save syncing in). Re-scan quietly so the counts and
+  // the injected-token figure stay true without replaying the sweep.
+  useEffect(() => {
+    void window.api.memoryShared().then(setShared)
+    return window.api.onMemoryChanged((s) => {
+      setShared(s)
+      void window.api.scanMemory().then(setScan)
+    })
+  }, [])
+  const onSharedChange = (s: SharedMemoryState): void => {
+    setShared(s)
+    void window.api.scanMemory().then(setScan)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -54,8 +71,14 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
   const banks = scan?.banks ?? []
   const others = banks.filter((b) => !b.active)
   const primary = active ?? banks[0] ?? null
-  const bankCount = banks.length
-  const totalEntries = banks.reduce((n, b) => n + b.entries, 0)
+  const globalEntries = shared?.global?.exists ? shared.global.entries.length : 0
+  const linkedLoaded = (shared?.linked ?? []).filter((l) => l.exists && !l.duplicateOf)
+  const sharedParts = [globalEntries > 0 ? 'Global Memory' : '', linkedLoaded.length ? `${linkedLoaded.length} linked` : '']
+    .filter(Boolean)
+    .join(' + ')
+  const bankCount = banks.length + (globalEntries > 0 ? 1 : 0) + linkedLoaded.length
+  const totalEntries =
+    banks.reduce((n, b) => n + b.entries, 0) + globalEntries + linkedLoaded.reduce((n, l) => n + l.entries, 0)
 
   const bankRow = (b: MemoryBank, seen: boolean): React.JSX.Element => (
     <div className={`mem-bank${b.active ? ' active' : ''}${seen ? ' seen' : ''}`} key={b.key}>
@@ -79,8 +102,9 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
         ) : ok ? (
           <span className="memory-check-title">
             ✓ Your memory is loaded — <strong>{totalEntries}</strong> {totalEntries === 1 ? 'memory' : 'memories'} across{' '}
-            <strong>{bankCount}</strong> {bankCount === 1 ? 'store' : 'stores'}, injected into every new terminal (the same
-            context you have across all your plain Claude sessions).
+            <strong>{bankCount}</strong> {bankCount === 1 ? 'store' : 'stores'}
+            {sharedParts ? ` (incl. ${sharedParts})` : ''}, injected into every new terminal (the same context you have
+            across all your plain Claude sessions).
           </span>
         ) : (
           <span className="memory-check-title">
@@ -146,6 +170,8 @@ export function MemoryCheck({ onClose }: { onClose: () => void }): React.JSX.Ele
           </p>
         </div>
       )}
+
+      {!searching && <SharedMemoryPanel shared={shared} onChange={onSharedChange} />}
 
       {!searching && showDetails && (
         <div className="mem-bank-list details">

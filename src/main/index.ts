@@ -23,7 +23,8 @@ import { SettingsWatcher } from './usage/settingsWatcher'
 import { CostAdvisor } from './usage/CostAdvisor'
 import { ContextStore } from './context/ContextStore'
 import { scanMemoryBanks } from './memoryScan'
-import { buildUserMemoryBlock } from './userMemory'
+import { MemorySources } from './sharedMemory'
+import { buildUserMemoryBlock, userMemoryPaths } from './userMemory'
 import {
   broadcast,
   closeTerminalWindow,
@@ -39,6 +40,9 @@ if (!app.isPackaged) {
   // dev-only: allows driving the renderer over CDP for automated verification
   // (CPM_CDP_PORT lets a second dev instance run beside an already-open app)
   app.commandLine.appendSwitch('remote-debugging-port', process.env.CPM_CDP_PORT || '9222')
+  // CPM_USER_DATA gives that second instance its own app data (projects, memory
+  // locations) so automated checks never touch the real ones
+  if (process.env.CPM_USER_DATA) app.setPath('userData', process.env.CPM_USER_DATA)
 }
 
 // A failed ConPTY spawn (e.g. bad cwd) surfaces as an async uncaught exception from
@@ -92,6 +96,8 @@ let graphStore: GraphStore | null = null
 let taskHub: TaskHub | null = null
 /** shared context notes, only when the active project has a shared folder */
 let contextStore: ContextStore | null = null
+/** Global Memory location + linked memory sources (app-wide) */
+let memorySources: MemorySources | null = null
 let projectManager: ProjectManager
 let activeProject: string | null = null
 const startupWarnings: string[] = []
@@ -182,10 +188,11 @@ function collectWarnings(): void {
   }
 }
 
-/** Graph protocol + the user's cross-project memory index, so every spawned
- *  session starts with the same context as opening Claude normally. */
+/** Graph protocol + every memory store on the machine + Global/linked memory, so
+ *  every spawned session starts with the same context as opening Claude normally,
+ *  plus whatever the user shares with (or was shared by) other people. */
 function buildProtocolContent(): string {
-  const memory = buildUserMemoryBlock()
+  const memory = [buildUserMemoryBlock(), memorySources?.promptBlock() ?? ''].filter(Boolean).join('\n\n')
   return memory ? `${GRAPH_PROTOCOL}\n${memory}\n` : GRAPH_PROTOCOL
 }
 
@@ -500,7 +507,87 @@ function registerIpc(): void {
     // (graph protocol + all memory banks), so the user sees what the tool adds
     const scan = scanMemoryBanks()
     const injectedChars = buildProtocolContent().length
-    return { ...scan, injectedChars, injectedTokensApprox: Math.round(injectedChars / 4) }
+    // Global/linked memory counts too: a teammate with no memory of their own yet
+    // still gets a green check once they've loaded the shared folder
+    const shared = memorySources?.state()
+    const sharedLoaded =
+      (shared?.global?.entries.length ?? 0) > 0 || (shared?.linked ?? []).some((l) => l.exists && !l.duplicateOf)
+    return {
+      ...scan,
+      ok: scan.ok || sharedLoaded,
+      reason: scan.ok || sharedLoaded ? undefined : scan.reason,
+      injectedChars,
+      injectedTokensApprox: Math.round(injectedChars / 4)
+    }
+  })
+
+  // ---- global + linked memory ----------------------------------------------
+  // Global Memory = a folder (ideally shared/synced) that "save this to global
+  // memory" writes into; linked memory = other people's memory the user browsed
+  // to. Both are loaded into every new terminal.
+  const pick = (opts: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> => {
+    const win = getMainWindow()
+    return win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts)
+  }
+  const emptyShared = { global: null, linked: [] }
+  ipcMain.handle('memory:shared', () => memorySources?.state() ?? emptyShared)
+  ipcMain.handle('memory:chooseGlobal', async () => {
+    if (!memorySources) return { canceled: true as const }
+    const result = await pick({
+      title: 'Choose where Global Memory is saved (a shared or synced folder works best)',
+      defaultPath: memorySources.globalDir() ?? activeSharedPath() ?? undefined,
+      buttonLabel: 'Use this folder',
+      properties: ['openDirectory', 'createDirectory', 'promptToCreate']
+    })
+    if (result.canceled || !result.filePaths[0]) return { canceled: true as const }
+    try {
+      return { canceled: false as const, state: memorySources.setGlobalDir(result.filePaths[0]) }
+    } catch (err) {
+      return { canceled: false as const, state: memorySources.state(), error: `Can't use that folder: ${String(err)}` }
+    }
+  })
+  ipcMain.handle('memory:clearGlobal', () => memorySources?.setGlobalDir(null) ?? emptyShared)
+  ipcMain.handle('memory:importToGlobal', async () => {
+    if (!memorySources?.globalDir()) {
+      return { added: [], updated: [], skipped: [], error: 'Choose a Global Memory location first.' }
+    }
+    const result = await pick({
+      title: 'Add memory files to Global Memory',
+      defaultPath: userMemoryPaths().dir,
+      buttonLabel: 'Add to Global Memory',
+      filters: [
+        { name: 'Memory files', extensions: ['md'] },
+        { name: 'All files', extensions: ['*'] }
+      ],
+      properties: ['openFile', 'multiSelections']
+    })
+    if (result.canceled || !result.filePaths.length) return { canceled: true, added: [], updated: [], skipped: [] }
+    return memorySources.importFiles(result.filePaths)
+  })
+  ipcMain.handle('memory:link', async (_e, kind: 'file' | 'folder') => {
+    if (!memorySources) return { canceled: true as const }
+    const result = await pick(
+      kind === 'folder'
+        ? { title: 'Link a memory folder', buttonLabel: 'Link folder', properties: ['openDirectory'] }
+        : {
+            title: 'Link a memory file — pick a MEMORY.md to link its whole folder',
+            buttonLabel: 'Link file',
+            filters: [
+              { name: 'Memory files', extensions: ['md', 'txt'] },
+              { name: 'All files', extensions: ['*'] }
+            ],
+            properties: ['openFile']
+          }
+    )
+    if (result.canceled || !result.filePaths[0]) return { canceled: true as const }
+    return { canceled: false as const, state: memorySources.link(result.filePaths[0]) }
+  })
+  ipcMain.handle('memory:unlink', (_e, id: string) => memorySources?.unlink(id) ?? emptyShared)
+  ipcMain.handle('memory:removeGlobal', (_e, name: string) => memorySources?.remove(name) ?? { ok: false })
+  ipcMain.handle('memory:reveal', async (_e, path: string) => {
+    if (!path || !existsSync(path)) return { ok: false, error: `Not found: ${path}` }
+    const err = await shell.openPath(path)
+    return err ? { ok: false, error: err } : { ok: true }
   })
 
   ipcMain.handle('app:diagnostics', (): Diagnostics => {
@@ -601,6 +688,12 @@ app.whenReady().then(async () => {
   }
 
   collectWarnings()
+  // before the support files: the protocol file carries Global/linked memory
+  memorySources = new MemorySources({
+    userDataDir: app.getPath('userData'),
+    author: taskAuthorName(),
+    onChange: (state) => broadcast('memory:changed', state)
+  })
   const { protocolPath, settingsFallbackPath } = writeSupportFiles()
 
   // live web preview: what the pane shows + when it should reload (state is
@@ -615,7 +708,8 @@ app.whenReady().then(async () => {
   mcpServer = new GraphMcpServer(
     () => graphStore,
     () => taskHub,
-    () => previewManager
+    () => previewManager,
+    () => memorySources
   )
   await mcpServer.start()
 
@@ -718,6 +812,7 @@ app.on('before-quit', () => {
   graphStore?.dispose()
   taskHub?.dispose()
   contextStore?.dispose()
+  memorySources?.dispose()
   previewManager?.dispose()
   mcpServer?.stop()
   agentDiscovery.dispose()
